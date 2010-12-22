@@ -1,0 +1,26 @@
+name:                  abitmap
+version:               0.1.0
+cabal-version:         >= 1.2
+build-type:            Simple
+license:               BSD3
+license-file:          LICENSE
+copyright:             Copyright (C) 2010 Byron James Johnson
+author:                Byron James Johnson
+maintainer:            KrabbyKrap@gmail.com
+synopsis:              Library for pure, thread-safe bitmaps stored internally as arrays of pixels
+description:           Library for pure, thread-safe bitmaps stored internally as arrays of pixels
+				       .
+					   This library is supports converting to and from bitmaps of the "bitmap" package
+category:              Graphics, Data
+tested-with:           GHC == 6.12.3
+
+library
+    hs-source-dirs:    src
+    build-depends:     base >= 4 && < 5, array, cereal, monad-fclabels, zlib, bitmap, stb-image, tga, spoon, string-class
+    exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.ABitmap, Data.ABitmap.Internal
+    ghc-options:       -Wall
+    extensions:        DeriveDataTypeable, PatternGuards, TypeOperators, ScopedTypeVariables, GeneralizedNewtypeDeriving
+
+source-repository head
+    type:              darcs
+    location:          http://patch-tag.com/r/bob/abitmap
