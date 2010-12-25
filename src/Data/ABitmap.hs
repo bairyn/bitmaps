@@ -35,6 +35,9 @@ module Data.ABitmap
 
     -- * Bitmaps
     , mapBitmap
+    , bitmapToPixelArray
+    , pixelArrayToBitmap
+    , bitmapDimensions
 
     -- * Pixels
     , pxR
@@ -343,6 +346,20 @@ unpersistBitmap t__@(_, _, s__) = let ~(Just (first__, tail__)) = S.uncons s__
 -- | Map a bitmap, pixel by pixel
 mapBitmap :: (PixelBGRA -> PixelBGRA) -> Bitmap -> Bitmap
 mapBitmap f = Bitmap . fmap f . unwrapBitmap
+
+-- | Return an array of pixels from the bitmap
+bitmapToPixelArray :: Bitmap -> Array (Integer, Integer) PixelBGRA
+bitmapToPixelArray = unwrapBitmap
+
+-- | Construct a bitmap from an array of pixels
+pixelArrayToBitmap :: Array (Integer, Integer) PixelBGRA -> Bitmap
+pixelArrayToBitmap = Bitmap
+
+-- | Returns the dimensions as a tuple of (rows, columns)
+bitmapDimensions :: Bitmap -> (Integer, Integer)
+bitmapDimensions (Bitmap a) =
+    let (_, (mr, mc)) = bounds a
+    in  (abs . pred $ mr, abs . pred $ mc)
 
 byteLabel :: (Integral p, Bits p) => Integer -> (p :-> Word8)
 byteLabel 0 = lens (fromIntegral) (\w p -> p .|. fromIntegral w)
