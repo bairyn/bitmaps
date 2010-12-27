@@ -355,11 +355,11 @@ bitmapToPixelArray = unwrapBitmap
 pixelArrayToBitmap :: Array (Integer, Integer) PixelBGRA -> Bitmap
 pixelArrayToBitmap = Bitmap
 
--- | Returns the dimensions as a tuple of (rows, columns)
+-- | Returns the dimensions as a tuple of (width, height)
 bitmapDimensions :: Bitmap -> (Integer, Integer)
 bitmapDimensions (Bitmap a) =
     let (_, (mr, mc)) = bounds a
-    in  (abs . succ $ mr, abs . succ $ mc)
+    in  (abs . succ $ mc, abs . succ $ mr)
 
 byteLabel :: (Integral p, Bits p) => Integer -> (p :-> Word8)
 byteLabel 0 = lens (fromIntegral) (\w p -> p .|. fromIntegral w)
