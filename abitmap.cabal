@@ -16,7 +16,7 @@ tested-with:           GHC == 6.12.3
 
 library
     hs-source-dirs:    src
-    build-depends:     base >= 4 && < 5, array, cereal, monad-fclabels, zlib, bitmap, stb-image, tga, spoon, string-class
+    build-depends:     base >= 4 && < 5, array, cereal, monad-state, zlib, bitmap, stb-image, tga, spoon, string-class
     exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.ABitmap, Data.ABitmap.Internal
     ghc-options:       -Wall
     extensions:        DeriveDataTypeable, PatternGuards, TypeOperators, ScopedTypeVariables, GeneralizedNewtypeDeriving

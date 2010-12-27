@@ -359,7 +359,7 @@ pixelArrayToBitmap = Bitmap
 bitmapDimensions :: Bitmap -> (Integer, Integer)
 bitmapDimensions (Bitmap a) =
     let (_, (mr, mc)) = bounds a
-    in  (abs . pred $ mr, abs . pred $ mc)
+    in  (abs . succ $ mr, abs . succ $ mc)
 
 byteLabel :: (Integral p, Bits p) => Integer -> (p :-> Word8)
 byteLabel 0 = lens (fromIntegral) (\w p -> p .|. fromIntegral w)
