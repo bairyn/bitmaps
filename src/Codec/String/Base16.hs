@@ -6,6 +6,7 @@ module Codec.String.Base16
     ) where
 
 import Prelude hiding ((.), id, (++))
+import Control.Applicative hiding (empty)
 import Control.Category
 import Data.Maybe (listToMaybe)
 import Data.Monoid (Monoid(mappend))
@@ -24,13 +25,13 @@ encodeHex s
         = empty
     where key = keyStringConstruct :: s
 
-decodeHex :: forall s. (StringConstruct s, StringEmpty s) => s -> s
+decodeHex :: forall s. (StringConstruct s, StringEmpty s) => s -> Maybe s
 decodeHex s
     | (Just (a, b, s')) <- uncons2 s
     , (Just w) <- (maybeRead $ "0x" ++ [toChar $ a] ++ [toChar $ b]  :: Maybe Word8)
-        = (toMainChar key w) `cons` decodeHex s'
+        = ((toMainChar key w) `cons`) <$> decodeHex s'
     | otherwise
-        = empty
+        = Nothing
     where key = keyStringConstruct :: s
 
 (++) :: (Monoid a) => a -> a -> a

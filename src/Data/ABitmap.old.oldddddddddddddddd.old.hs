@@ -23,9 +23,11 @@ module Data.ABitmap
 
     -- * Representing bitmaps as strings
     , persistBitmap64
-    , encodeBitmapRGB24
+    , encodeBitmapRGB24VerRef
+    , encodeBitmapBGR24
     , encodeBitmapRGBA32
-    , encodeBitmapTGA
+    , putBitmap
+    , writeBitmap
     , decodeBitmap
     , unpersistBitmap64
 
@@ -52,6 +54,7 @@ module Data.ABitmap
     ) where
 
 import Prelude hiding ((.), id, (++))
+import qualified Data.ByteString as B
 import Codec.Compression.Zlib
 import Codec.Image.STB hiding (Bitmap)
 import Codec.String.Base16
@@ -66,15 +69,18 @@ import qualified Data.Bitmap.IO as FB
 import Data.Bits
 import Data.Foldable
 import Data.Function
+import Data.Int
 import Data.List hiding ((++), foldl', foldl, foldr)
 import Data.Maybe (listToMaybe)
 import Data.Monoid (Monoid(mappend))
+import Data.Serialize (encode)
+import Data.Serialize.Builder
 import qualified Data.String.Class as S
 import Data.Word
 import qualified Foreign (unsafePerformIO)
 import Foreign.Ptr
 import Foreign.Storable
-import Graphics.Formats.TGA.TGA
+import System.IO
 import Text.Printf
 
 -- | Converts a 'ForeignBitmap' to a 'Bitmap'
@@ -94,7 +100,7 @@ toBitmap (ForeignBitmap fb) = FB.withBitmap fb f
                             row    <- [0 .. abs . pred $ h']
                             column <- [0 .. abs . pred $ w']
                             let base = channels' * (row * w' + column) + row * padding'
-                                getByte = peekElemOff ptr . fromIntegral
+                                getByte = peekByteOff ptr . fromIntegral
                             return $
                                 if isAlpha
                                     then do
@@ -133,7 +139,7 @@ toBitmap (ForeignBitmap fb) = FB.withBitmap fb f
 
 -- | Converts a 'Bitmap' to the 'ForeignBitmap' reference
 --
--- As internal memory must be allocated and used, this function must be in the IO monad.
+-- As internal memory must be allocated and used, this function returns an IO action.
 toForeignBitmap :: Bitmap -> IO ForeignBitmap
 toForeignBitmap = undefined{-
 toForeignBitmap (Bitmap a) = do
@@ -190,17 +196,43 @@ persistBitmap64 b =
           key    = S.keyStringConstruct :: s
           empty_ = S.empty :: s
 
--- | Encode a bitmap in a ByteString in the RGB24 format
-encodeBitmapRGB24 :: forall s. (S.StringConstruct s, S.StringEmpty s) => Bitmap -> (Integer, Integer, s)
-encodeBitmapRGB24 (Bitmap a) =
+-- | Encode the pixels of bitmap in a ByteString in the RGB24 format, packed by rows appropriately for bitmaps, vertically reflected from the bottom left
+--
+-- Note: this is only a string of the raw pixel data
+encodeBitmapRGB24VerRef :: forall s. (S.StringConstruct s, S.StringEmpty s) => Bitmap -> (Integer, Integer, s)
+encodeBitmapRGB24VerRef (Bitmap a) =
+    let (_, (maxRow, maxColumn)) = bounds a
+        raw i@(r, c)
+            | c == maxColumn =
+                if r == 0
+                    then prepPack . prep $ empty_
+                    else prepPack . prep $ raw (pred r, 0)
+            | otherwise = prep $ raw (r, succ c)
+            where pixel  = a ! i
+                  prep = \s -> (S.toMainChar key $ pxR <: pixel) `S.cons` (S.toMainChar key $ pxG <: pixel) `S.cons` (S.toMainChar key $ pxB <: pixel) `S.cons` s
+                  prepPack
+                      | (3 * succ maxColumn `mod` 4) == 0 = \s -> s
+                      | (3 * succ maxColumn `mod` 4) == 1 = \s -> (S.toMainChar key padByte) `S.cons` (S.toMainChar key padByte) `S.cons` (S.toMainChar key padByte) `S.cons` s
+                      | (3 * succ maxColumn `mod` 4) == 2 = \s -> (S.toMainChar key padByte) `S.cons` (S.toMainChar key padByte) `S.cons` s
+                      | (3 * succ maxColumn `mod` 4) == 3 = \s -> (S.toMainChar key padByte) `S.cons` s
+                      | otherwise              = \s -> s
+                  padByte :: Word8
+                  padByte = 0x00
+    in  (succ maxColumn, succ maxRow, raw (maxRow, 0))
+    where key    = S.keyStringConstruct :: s
+          empty_ = S.empty :: s
+
+-- | Encode the pixels of bitmap in a ByteString in the BGR24 format
+encodeBitmapBGR24 :: forall s. (S.StringConstruct s, S.StringEmpty s) => Bitmap -> (Integer, Integer, s)
+encodeBitmapBGR24 (Bitmap a) =
     let raw         = foldr' step empty_ a
-        step x acc  = (S.toMainChar key $ pxR <: x) `S.cons` (S.toMainChar key $ pxG <: x) `S.cons` (S.toMainChar key $ pxB <: x) `S.cons` acc
+        step x acc  = (S.toMainChar key $ pxB <: x) `S.cons` (S.toMainChar key $ pxG <: x) `S.cons` (S.toMainChar key $ pxR <: x) `S.cons` acc
         (_, (r, c)) = bounds a
     in  (succ c, succ r, raw)
     where key    = S.keyStringConstruct :: s
           empty_ = S.empty :: s
 
--- | Encode a bitmap in a ByteString in the RGBA32 format
+-- | Encode the pixels of bitmap in a ByteString in the RGBA32 format
 encodeBitmapRGBA32 :: forall s. (S.StringConstruct s, S.StringEmpty s) => Bitmap -> (Integer, Integer, s)
 encodeBitmapRGBA32 (Bitmap a) =
     let raw         = foldr' step empty_ a
@@ -210,11 +242,62 @@ encodeBitmapRGBA32 (Bitmap a) =
     where key    = S.keyStringConstruct :: s
           empty_ = S.empty :: s
 
--- | Create a TGA image from a bitmap
-encodeBitmapTGA :: Bitmap -> TGAData
-encodeBitmapTGA bm =
-    let (w, h, raw) = encodeBitmapRGBA32 bm
-    in  TGAData (S.toStrictByteString "Data.ABitmap.encodeBitmapTGA encoded bitmap") (RGB32 raw) 0 0 (fromIntegral w) (fromIntegral h)
+-- | Write the bitmap in the "bmp" format
+--
+-- The alpha component is lost.
+--
+-- TODO actually support *reading* this format; encode as a ByteString outside IO monad
+putBitmap :: Handle -> Bitmap -> IO ()
+putBitmap handle_ b = do
+    let (w, h, raw) = encodeBitmapRGB24VerRef b
+    -- TODO lazy bytestring?
+
+    -- Magic sequence
+    B.hPut handle_ $ encode (0x42 :: Word8)
+    B.hPut handle_ $ encode (0x4D :: Word8)
+
+    -- ERror reading bitmap header
+
+    -- File size
+    B.hPut handle_ $ encode (fromIntegral $ 3 * w * h + 0x0E + 40  :: Word32)
+
+    -- Reserved
+    B.hPut handle_ . toByteString . putWord16le $ (0x00 :: Word16)
+    B.hPut handle_ . toByteString . putWord16le $ (0x00 :: Word16)
+
+    -- Offset
+    B.hPut handle_ . toByteString . putWord32le $ (0x0E + 40 :: Word32)
+
+    -- Bitmap information header; BITMAPINFOHEADER
+    -- header size
+    B.hPut handle_ . toByteString . putWord32le $ (40 :: Word32)
+    -- width
+    B.hPut handle_ . toByteString . putWord32le . (fromIntegral :: Int32 -> Word32) $ (fromIntegral $ w  :: Int32)
+    -- height
+    B.hPut handle_ . toByteString . putWord32le . (fromIntegral :: Int32 -> Word32) $ (fromIntegral $ h  :: Int32)
+    -- number of color planes
+    B.hPut handle_ . toByteString . putWord16le $ (1 :: Word16)
+    -- bits per pixel / depth
+    B.hPut handle_ . toByteString . putWord16le $ (24 :: Word16)
+    -- compression
+    B.hPut handle_ . toByteString . putWord32le $ (0 :: Word32)  -- no compression
+    -- image size
+    B.hPut handle_ . toByteString . putWord32le $ (fromIntegral $ 3 * w * h  :: Word32)
+    -- horizontal resolution; pixel per meter
+    B.hPut handle_ . toByteString . putWord32le . (fromIntegral :: Int32 -> Word32) $ (3000 :: Int32)
+    -- vertical resolution; pixel per meter
+    B.hPut handle_ . toByteString . putWord32le . (fromIntegral :: Int32 -> Word32) $ (3000 :: Int32)
+    -- number of colors
+    B.hPut handle_ . toByteString . putWord32le $ (0 :: Word32)
+    -- number of important colors
+    B.hPut handle_ . toByteString . putWord32le $ (0 :: Word32)
+
+    -- image
+    B.hPut handle_ $ raw
+
+-- | Equivalent to 'putBitmap'
+writeBitmap :: FilePath -> Bitmap -> IO ()
+writeBitmap fp b = withBinaryFile fp (WriteMode) (flip putBitmap b)
 
 -- | Decode a bitmap; the formats that stb-image recognizes can be used
 decodeBitmap :: (S.StringStrictByteString s, S.StringString s2) => s -> Either s2 Bitmap

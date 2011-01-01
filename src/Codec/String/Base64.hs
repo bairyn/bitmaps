@@ -2,15 +2,18 @@
 
 module Codec.String.Base64
     ( bytes64
+    , ibytes64
     , fillByte64
     , encode64
     , decode64
     ) where
 
 import Prelude hiding ((.), id, (++), length)
+import Control.Applicative hiding (empty)
 import Control.Category
 import Data.Array.IArray
 import Data.Bits
+import qualified Data.Map as M
 import Data.Monoid
 import Data.String.Class
 import Data.Word
@@ -22,6 +25,9 @@ bytes64 = listArray (0, 0x3F) $
  ++ [0x30..0x39]
  ++ [0x2B, 0x2F]
     where (++) = mappend
+
+ibytes64 :: M.Map Word8 Word8
+ibytes64 = M.fromList $ map (\ ~(a_, b_) -> (b_, a_)) . assocs $ bytes64
 
 fillByte64 :: Word8
 fillByte64 = 0x3D
@@ -57,35 +63,41 @@ encode64 s
           fillByte64' = toMainChar key fillByte64
           key = keyStringConstruct :: s
 
-decode64 :: forall s. (StringConstruct s, StringEmpty s) => s -> s
+decode64 :: forall s. (StringConstruct s, StringEmpty s) => s -> Maybe s
 decode64 s
-    | (Just (a, b, c, d, s')) <- uncons4 s =
+    | (Just (a, b, c, d, s')) <- uncons4 s = do
           let n x
-                  | (toWord8 x) == fillByte64 = 0xFF
-                  | (Just y) <- lookup (toWord8 x) . map (\ ~(a_, b_) -> (b_, a_)) . assocs $ bytes64 = y
-                  | otherwise = 0x00
-              a' = n a
-              b' = n b
-              c' = n c
-              d' = n d
-          in  case () of
-                     _ | c' /= 0xFF ->
-                             case () of
-                                    _ | d' == 0xFF ->
-                                          cons2
-                                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
-                                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
-                                            $ empty
-                                      | otherwise  ->
-                                          cons3
-                                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
-                                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
-                                              (toMainChar key $ (c' `shiftL` 6) .|. d')
-                                            $ decode64 s'
-                       | otherwise ->
-                           cons
-                               (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
-                             $ empty
+                  | (toWord8 x) == fillByte64                 = Just 0xFF  -- no regular base 64 digit can match with 0xFF; use this so we know whether a byte is a fill byte
+                  | (Just y) <- M.lookup (toWord8 x) ibytes64 = Just y
+                  | otherwise                                 = Nothing
+          a' <- n a
+          b' <- n b
+          c' <- n c
+          d' <- n d
+          if c' /= 0xFF
+              then do
+                  -- c is not a fill byte; check d
+                  if d' /= 0xFF
+                      then do
+                          -- abcd
+                          cons3
+                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
+                              (toMainChar key $ (c' `shiftL` 6) .|. d')
+                            <$> decode64 s'
+                      else do
+                          -- abc_
+                          Just . cons2
+                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
+                            $ empty
+              else do
+                  do
+                      do
+                          -- ab__
+                          Just . cons
+                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                            $ empty
     | otherwise =
-        empty
+        Just empty
     where key = keyStringConstruct :: s
