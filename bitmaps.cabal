@@ -16,8 +16,8 @@ tested-with:           GHC == 6.12.3
 
 library
     hs-source-dirs:    src
-    build-depends:     base >= 4 && < 5, array, containers, binary, monad-state, zlib, bitmap, stb-image, string-class >= 0.1.1.0, bytestring
-    exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.Bitmap.Array, Data.Bitmap.Array.Internal, Data.Bitmap.BMP, Data.Bitmap.Class, Data.Bitmap.Foreign, Data.Bitmap.Function, Data.Bitmap.Function.Internal, Data.Bitmap.Pixel, Data.Bitmap.Reflectable, Data.Bitmap.Searchable, Data.Bitmap.StringRGB24A4VR, Data.Bitmap.StringRGB24A4VR.Internal, Data.Bitmap.StringRGB32, Data.Bitmap.StringRGB32.Internal, Data.Bitmap.Types
+    build-depends:     base >= 4 && < 5, array, containers, binary, monad-state, zlib, bitmap, stb-image, string-class >= 0.1.2.0, bytestring
+    exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.Bitmap.Array, Data.Bitmap.Array.Internal, Data.Bitmap.BMP, Data.Bitmap.Class, Data.Bitmap.Foreign, Data.Bitmap.Function, Data.Bitmap.Function.Internal, Data.Bitmap.Pixel, Data.Bitmap.Reflectable, Data.Bitmap.Searchable, Data.Bitmap.StringRGB24A4VR, Data.Bitmap.StringRGB24A4VR.Internal, Data.Bitmap.StringRGB32, Data.Bitmap.StringRGB32.Internal, Data.Bitmap.Types Data.Bitmap.Util
     ghc-options:       -Wall
 
 source-repository head

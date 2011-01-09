@@ -34,19 +34,21 @@ data Depth =
 
 -- | Formats that bitmaps that are instances of the 'Bitmap' class need to support; these formats include the necessary meta-information
 data CompleteBitmapFormat =
-    CBF_BMPIU    -- ^ Uncompressed BITMAPINFOHEADER BMP format (CompleteBitmapFormat_BitMaPInfoheaderUncompressed)
+    CBF_BMPIU     -- ^ Uncompressed BITMAPINFOHEADER BMP format (CompleteBitmapFormat_BitMaPInfoheaderUncompressed)
 
-                 -- Due to being uncompressed, strings encoded in this format can grow large quite quickly.
-                 -- This format is standard and widely supported, and can be written directly to a file, the extension
-                 -- of which is typically ".bmp"
-  | CBF_BMPIU64  -- ^ Same as 'CBF_BMPIU' except that that final result is base-64 encoded and is thus suitable for human-readable strings defining a bitmap (CompleteBitmapFormat_BitMaPInfoheaderUncompressed)
-                 --
-                 -- Like 'CBF_BMPIU', strings encoded in this format can become large quick quickly, and even about a third more so, due to the more restrictive range of values.
+                  -- Due to being uncompressed, strings encoded in this format can grow large quite quickly.
+                  -- This format is standard and widely supported, and can be written directly to a file, the extension
+                  -- of which is typically ".bmp"
+  | CBF_BMPIU64   -- ^ Same as 'CBF_BMPIU' except that that final result is base-64 encoded and is thus suitable for human-readable strings defining a small bitmap (CompleteBitmapFormat_BitMaPInfoheaderUncompressed)
+                  --
+                  -- Like 'CBF_BMPIU', strings encoded in this format can become large quick quickly, and even about a third more so, due to the more restrictive range of values.
+  | CBF_BMPIUZ64  -- Similar to CBF_BMPIU except that the encoded string is compressed before it is base-64 encoded
     deriving (Eq, Ord, Enum, Bounded, Show, Read, Typeable, Data)
 
 -- | Formats for raw image data that don't include information such as dimensions
 data ImageBitmapFormat =
     IBF_RGB24A4VR  -- ^ Series of red, green, blue, red, etc. with a row alignment of 4, stored upside-down
   | IBF_RGB24A4    -- ^ Series of red, green, blue, red, etc. with a row alignment of 4
-  | IBF_RGB32      -- ^ Series of unused byte, red, green, and blue.
+  | IBF_RGB32      -- ^ Series of unused byte, red, green, and blue
+  | IBF_RGB32Z64   -- ^ Series of unused byte, red, green, and blue; the string is compressed and then base-64 encoded
     deriving (Eq, Ord, Enum, Bounded, Show, Read, Typeable, Data)

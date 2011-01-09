@@ -73,26 +73,31 @@ instance Bitmap BitmapStringRGB24A4VR where
                                ((fromIntegral . S.toWord8 $ s `S.index` (offset + 1)) `shiftL` 8)  .|.
                                ((fromIntegral . S.toWord8 $ s `S.index` (offset + 2)))
 
-    constructPixels f dms@(width, height) = BitmapStringRGB24A4VR dms . BitmapImageString $
-        let r' :: (Int, Int) -> B.ByteString
-            r' i@(row, column)
-                | column > maxColumn =
-                    padding `S.append`
-                    r' (pred row, 0)
-                | row    < 0         =
-                    S.empty
-                | otherwise          =
-                    S.cons3
-                        (S.toMainChar key $ red   <: pixel)
-                        (S.toMainChar key $ green <: pixel)
-                        (S.toMainChar key $ blue  <: pixel)
-                        $ r' (row, succ column)
-                where pixel = f i
-        in  r' (maxRow, 0)
-        where maxRow    = abs . pred $ height
-              maxColumn = abs . pred $ width
-              padding   = S.fromString $ widthPadding width
-              key       = S.keyStringCells :: B.ByteString
+    constructPixels f dms@(width, height) = BitmapStringRGB24A4VR dms . (BitmapImageString :: B.ByteString -> BitmapImageString) $
+        S.unfoldrN (imageSize dms) getComponent (0 :: Int, 0 :: Int, 0 :: Int, 0 :: Int)
+        where getComponent (row, column, orgb, paddingLeft)
+                  | paddingLeft > 0    =
+                      Just (padCell, (row, column, orgb, pred paddingLeft))
+                  | orgb   > 2         =
+                      getComponent (row, succ column, 0, 0)
+                  | column > maxColumn =
+                      getComponent (succ row, 0, 0, paddingSize)
+                  | row    > maxRow    =
+                      Nothing
+                  | otherwise =
+                      let pixel = f (row, column)
+                          componentGetter =
+                              case orgb of
+                                  0 -> S.toMainChar key . (red   <:)
+                                  1 -> S.toMainChar key . (green <:)
+                                  2 -> S.toMainChar key . (blue  <:)
+                                  _ -> undefined
+                      in  Just (componentGetter pixel, (row, column, succ orgb, 0))
+              maxRow      = abs . pred $ height
+              maxColumn   = abs . pred $ width
+              paddingSize = snd $ bytesPerRow width 3 4
+              padCell     = S.toMainChar key $ padByte
+              key         = S.keyStringCells :: B.ByteString
 
     imageEncoders = updateIdentifiableElements (map (second unwrapGenericBitmapSerializer) defaultImageEncoders) $
         [ (IBF_RGB24A4VR, ImageEncoder $ encodeIBF_RGB24A4VR')
@@ -117,7 +122,7 @@ bitmapStringBytesPerRow :: BitmapStringRGB24A4VR -> (Int, Int)
 bitmapStringBytesPerRow b = bytesPerRow (fst $ bmps_dimensions <: b) 3 4
 
 widthPadding :: Int -> String
-widthPadding i = replicate (snd $ bytesPerRow i 3 4) $ S.toChar padByte
+widthPadding w = replicate (snd $ bytesPerRow w 3 4) $ S.toChar padByte
 
 -- | Return (rowSize, paddingSize) based on width, bytes per pixel, and alignment
 bytesPerRow :: Int -> Int -> Int -> (Int, Int)

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, PolymorphicComponents, TupleSections, ScopedTypeVariables, FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies, PolymorphicComponents, TupleSections, FlexibleContexts, ScopedTypeVariables #-}
 
 module Data.Bitmap.Class
     ( Bitmap(..)
@@ -16,25 +16,31 @@ module Data.Bitmap.Class
     , defaultCompleteEncoders
     , encodeCBF_BMPIU
     , encodeCBF_BMPIU64
+    , encodeCBF_BMPIUZ64
     , defaultCompleteDecoders
     , tryCBF_BMPIU
     , tryCBF_BMPIU64
+    , tryCBF_BMPIUZ64
     , defaultImageEncoders
     , encodeIBF_RGB24A4
     , encodeIBF_RGB24A4VR
     , encodeIBF_RGB32
+    , encodeIBF_RGB32Z64
     , defaultImageDecoders
     , tryIBF_RGB24A4
     , tryIBF_RGB24A4VR
     , tryIBF_RGB32
-    , encodeBitmapComplete
-    , decodeBitmapComplete
-    , encodeBitmapImage
-    , decodeBitmapImage
+    , tryIBF_RGB32Z64
+    , encodeComplete
+    , decodeComplete
+    , encodeImage
+    , decodeImage
     , encodeCompleteFmt
     , decodeCompleteFmt
     , encodeImageFmt
     , decodeImageFmt
+    , decodeImageDimensions
+    , decodeImageDimensionsFmt
     ) where
 
 import Codec.Compression.Zlib
@@ -42,16 +48,15 @@ import Codec.String.Base16
 import Codec.String.Base64
 import Control.Monad.Record
 import Control.Arrow
-import Control.Exception
 import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bitmap.Pixel
 import Data.Bitmap.Types
+import Data.Bitmap.Util
 import Data.Maybe
 import qualified Data.String.Class as S
-import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 
 -- | Bitmap class
@@ -128,8 +133,9 @@ updateIdentifiableElements orig new = map (\(k, v) -> (k, maybe v id $ lookup k 
 
 defaultCompleteEncoders :: [(CompleteBitmapFormat, GenericBitmapSerializer CompleteEncoder)]
 defaultCompleteEncoders = 
-    [ (CBF_BMPIU,   GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU)
-    , (CBF_BMPIU64, GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU64)
+    [ (CBF_BMPIU,    GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU)
+    , (CBF_BMPIU64,  GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU64)
+    , (CBF_BMPIUZ64, GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIUZ64)
     ]
 
 encodeCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => bmp -> s
@@ -182,10 +188,14 @@ encodeCBF_BMPIU b =
 encodeCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIU64 = encode64 . encodeCompleteFmt CBF_BMPIU
 
+encodeCBF_BMPIUZ64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIUZ64 = encode64 . S.fromStringCells . compress . encodeCompleteFmt CBF_BMPIU
+
 defaultCompleteDecoders :: [(CompleteBitmapFormat, GenericBitmapSerializer CompleteDecoder)]
 defaultCompleteDecoders =
-    [ (CBF_BMPIU,   GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU)
-    , (CBF_BMPIU64, GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU64)
+    [ (CBF_BMPIU,    GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU)
+    , (CBF_BMPIU64,  GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU64)
+    , (CBF_BMPIUZ64, GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIUZ64)
     ]
 
 tryCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
@@ -250,11 +260,15 @@ tryCBF_BMPIU s = do
 tryCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIU64 s = tryCBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
+tryCBF_BMPIUZ64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIUZ64 s = tryCBF_BMPIU =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIUZ64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
+
 defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
 defaultImageEncoders =
     [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4)
     , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4VR)
     , (IBF_RGB32,     GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32)
+    , (IBF_RGB32Z64,  GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32Z64)
     ]
 
 encodeIBF_RGB24A4 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
@@ -275,7 +289,7 @@ encodeIBF_RGB24A4 b =
         paddingSize = case 4 - ((3 * width) `mod` 4) of
                           4 -> 0
                           n -> n
-        padding  = S.fromString $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
+        padding  = S.fromStringCells $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
     in  r' (0, 0)
     where (width, height) = dimensions b
           maxRow          = abs . pred $ height
@@ -300,7 +314,7 @@ encodeIBF_RGB24A4VR b =
         paddingSize = case 4 - ((3 * width) `mod` 4) of
                           4 -> 0
                           n -> n
-        padding  = S.fromString $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
+        padding  = S.fromStringCells $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
     in  r' (maxRow, 0)
     where (width, height) = dimensions b
           maxRow          = abs . pred $ height
@@ -329,11 +343,15 @@ encodeIBF_RGB32 b =
           padCell         = S.toMainChar key $ (0x00 :: Word8)
           key             = S.keyStringCells :: s
 
+encodeIBF_RGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeIBF_RGB32
+
 defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
 defaultImageDecoders =
     [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4)
     , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4VR)
     , (IBF_RGB32,     GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32)
+    , (IBF_RGB32Z64,  GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32Z64)
     ]
 
 tryIBF_RGB24A4 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
@@ -391,13 +409,16 @@ tryIBF_RGB32 metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 3)))
                                    $ leastIntensity
 
+tryIBF_RGB32Z64 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB32Z64 metaBitmap s = tryIBF_RGB32 metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_RGB32Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
+
 -- | Encode a bitmap
 --
 -- An implementation can choose the most efficient or appropriate
 -- format by placing its encoder first in its list of encoders.
-encodeBitmapComplete :: (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeBitmapComplete
-    | null encoders = error $ printf "encodeBitmapComplete: implementation defines no encoders"
+encodeComplete :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeComplete
+    | null encoders = error $ printf "encodeComplete: implementation defines no encoders"
     | otherwise     = unwrapCompleteEncoder . snd . head $ encoders
     where encoders = completeEncoders
 
@@ -405,16 +426,16 @@ encodeBitmapComplete
 --
 -- The result of first decoder of the implementation that succeeds
 -- will be returned.  If none succeed, 'Nothing' is returned.
-decodeBitmapComplete :: (S.StringCells s, Bitmap bmp) => s -> Maybe (CompleteBitmapFormat, bmp)
-decodeBitmapComplete s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapCompleteDecoder decoder s) $ completeDecoders
+decodeComplete :: (S.StringCells s, Bitmap bmp) => s -> Maybe (CompleteBitmapFormat, bmp)
+decodeComplete s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapCompleteDecoder decoder s) $ completeDecoders
 
 -- | Encode the pixels of a bitmap
 --
 -- An implementation can choose the most efficient or appropriate
 -- format by placing its encoder first in its list of encoders.
-encodeBitmapImage :: (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeBitmapImage
-    | null encoders = error $ printf "encodeBitmapImage: implementation defines no encoders"
+encodeImage :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeImage
+    | null encoders = error $ printf "encodeImage: implementation defines no encoders"
     | otherwise     = unwrapImageEncoder . snd . head $ encoders
     where encoders = imageEncoders
 
@@ -422,8 +443,8 @@ encodeBitmapImage
 --
 -- The result of first decoder of the implementation that succeeds
 -- will be returned.  If none succeed, 'Nothing' is returned.
-decodeBitmapImage :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Maybe (ImageBitmapFormat, bmp)
-decodeBitmapImage bmp s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapImageDecoder decoder bmp s) $ imageDecoders
+decodeImage :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Maybe (ImageBitmapFormat, bmp)
+decodeImage bmp s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapImageDecoder decoder bmp s) $ imageDecoders
 
 serializeFmt :: (Eq a, Show a) => [(a, b)] -> String -> (a -> b)
 serializeFmt serializers noHandlerErrorFmtStr = \fmt -> case lookup fmt serializers of
@@ -453,17 +474,21 @@ decodeImageFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s
 decodeImageFmt    = unwrapImageDecoder . serializeFmt imageDecoders
     "decodeImageFmt: Bitmap instance did not define handler for decoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultImageDecoders' properly?"
 
-handlers :: [Handler (Either String a)]
-handlers = [ Handler $ \(e :: ArithException)   -> return . Left . show $ e
-           , Handler $ \(e :: ArrayException)   -> return . Left . show $ e
-           , Handler $ \(e :: ErrorCall)        -> return . Left . show $ e
-           , Handler $ \(e :: PatternMatchFail) -> return . Left . show $ e
-           , Handler $ \(e :: SomeException)    -> throwIO e
-           ]
-
--- Hack to catch "pureish" asynchronous errors
+-- | Decode an image with the given dimensions
 --
--- This is only used as a workaround to the bitmap library's shortcoming of using asynchronous errors instead of pure error handling, and
--- also zlib's same shortcoming.
-tablespoon :: a -> Either String a
-tablespoon x = unsafePerformIO $ (Right `fmap` evaluate x) `catches` handlers
+-- This is only guaranteed to work on implementations and formats that only
+-- need dimensions in addition to the raw pixel data.  This is convenient
+-- because most often the dimensions are all that is needed.
+--
+-- Currently, this function works by constructing a bitmap with the given dimensions
+-- and with each pixel set to the least intensity.  Thus it is significantly more efficient
+-- if this is used with a bitmap that doesn't strictly evaluate the entire pixel data when the structure
+-- is first constructed (not necessarily when any pixel is accessed) (currently
+-- none of the bitmap types exported in this library are so strict), as the
+-- bitmap will not need to be fully evaluated; only the dimensions will be used.
+decodeImageDimensions :: (S.StringCells s, Bitmap bmp) => Dimensions (BIndexType bmp) -> s -> Maybe (ImageBitmapFormat, bmp)
+decodeImageDimensions dms = decodeImage (constructPixels (const leastIntensity) dms)
+
+-- | Decode an image with the given dimensions as 'decodeImageDimensions' does it, but in a specific format
+decodeImageDimensionsFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
+decodeImageDimensionsFmt fmt dms = decodeImageFmt fmt (constructPixels (const leastIntensity) dms)
