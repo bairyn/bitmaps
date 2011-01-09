@@ -6,14 +6,9 @@ module Data.Bitmap.Types
     , Depth(..)
     , CompleteBitmapFormat(..)
     , ImageBitmapFormat(..)
-    , mostLikelyMatchCBF
-    , mostLikelyMatchIBF
     ) where
 
 import Data.Data
-import Data.Function (on)
-import Data.List
-import Data.Maybe (listToMaybe)
 
 type Dimensions  i = (i, i)
 type Coordinates i = (i, i)
@@ -51,13 +46,7 @@ data CompleteBitmapFormat =
 
 -- | Formats for raw image data that don't include information such as dimensions
 data ImageBitmapFormat =
-    IBF_RGB24A4VF  -- ^ Series of red, green, blue, red, etc. with a row alignment of 4, stored upside-down
+    IBF_RGB24A4VR  -- ^ Series of red, green, blue, red, etc. with a row alignment of 4, stored upside-down
   | IBF_RGB24A4    -- ^ Series of red, green, blue, red, etc. with a row alignment of 4
+  | IBF_RGB32      -- ^ Series of unused byte, red, green, and blue.
     deriving (Eq, Ord, Enum, Bounded, Show, Read, Typeable, Data)
-
--- maybeList plus sort by format (it is ord)
-mostLikelyMatchCBF :: [(CompleteBitmapFormat, a)] -> Maybe (CompleteBitmapFormat, a)
-mostLikelyMatchCBF = listToMaybe . sortBy (compare `on` fst)
-
-mostLikelyMatchIBF :: [(ImageBitmapFormat, a)] -> Maybe (ImageBitmapFormat, a)
-mostLikelyMatchIBF = undefined

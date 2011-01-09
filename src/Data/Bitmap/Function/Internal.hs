@@ -13,19 +13,16 @@ import Data.Bitmap.Types
 
 data BitmapFunction = BitmapFunction
     { _bmpf_dimensions :: Dimensions Integer
-    , _bmpf_getPixel   :: Coordinates Integer -> Pixel
+    , _bmpf_getPixel   :: Coordinates Integer -> PixelRGBA
     }
 
 mkLabels [''BitmapFunction]
 
 instance Bitmap BitmapFunction where
     type BIndexType BitmapFunction = Integer
+    type BPixelType BitmapFunction = PixelRGBA
 
-    depth b = case (bmpf_getPixel <: b) (0, 0) of
-        (PixelRGB  _) -> Depth24RGB
-        (PixelBGR  _) -> Depth24RGB
-        (PixelRGBA _) -> Depth32RGBA
-        (PixelBGRA _) -> Depth32RGBA
+    depth = const Depth32RGBA
 
     dimensions      = (bmpf_dimensions <:)
 

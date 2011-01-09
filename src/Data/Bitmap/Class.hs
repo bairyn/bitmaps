@@ -1,28 +1,55 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, TupleSections, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, PolymorphicComponents, TupleSections, ScopedTypeVariables, FlexibleContexts #-}
 
 module Data.Bitmap.Class
     ( Bitmap(..)
-    , decodeCompleteFmt
-    , decodeImageFmt
     , convertBitmap
-    , completeDecodes, tryCBF_BMPIU, tryCBF_BMPIU64
-    , imageDecodes
+
+    -- * Polymorphic type wrappers
+    , CompleteEncoder(..)
+    , CompleteDecoder(..)
+    , ImageEncoder(..)
+    , ImageDecoder(..)
+    , GenericBitmapSerializer(..)
+
+    -- * Bitmap serialization
+    , updateIdentifiableElements
+    , defaultCompleteEncoders
+    , encodeCBF_BMPIU
+    , encodeCBF_BMPIU64
+    , defaultCompleteDecoders
+    , tryCBF_BMPIU
+    , tryCBF_BMPIU64
+    , defaultImageEncoders
+    , defaultImageDecoders
+    , tryIBF_RGB24A4
+    , tryIBF_RGB24A4VR
+    , tryIBF_RGB32
+    , encodeBitmapComplete
+    , decodeBitmapComplete
+    , encodeBitmapImage
+    , decodeBitmapImage
+    , encodeCompleteFmt
+    , decodeCompleteFmt
+    , encodeImageFmt
+    , decodeImageFmt
     ) where
 
-import Control.Monad.Record
+import Codec.Compression.Zlib
 import Codec.String.Base16
 import Codec.String.Base64
-import Control.Applicative
+import Control.Monad.Record
+import Control.Arrow
+import Control.Exception
 import Control.Monad
+import Data.Binary
+import Data.Binary.Get
+import Data.Binary.Put
 import Data.Bitmap.Pixel
 import Data.Bitmap.Types
 import Data.Maybe
-import Data.Serialize
 import qualified Data.String.Class as S
-import Data.Word
+import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
-
-import Debug.Trace---------------------------------------------------
 
 -- | Bitmap class
 --
@@ -30,148 +57,135 @@ import Debug.Trace---------------------------------------------------
 -- upper-left-most corner of the bitmap.  Instances of this class
 -- are not required to support empty bitmaps.
 --
--- Default definitions for encoding and decoding are supplied.  Implementations
--- can define more efficient implementations.
-class (Integral (BIndexType bmp)) => Bitmap bmp where
+-- The encoding and decoding lists contain functions that can encode
+-- and decode or return a string containing information about why
+-- it could not be decoded in that format.  The order is important:
+-- When a function tries multiple or any decoder, it will use or return
+-- the one(s) closest to the head of the list.  There are lists
+-- of generic functions that are defined by default.  Normally, if an
+-- implementation of a bitmap type overrides the default instance,
+-- it will only need to replace one or a few decoders, not touching
+-- the rest of the default decoders or the order of the decoders;
+-- thus the function 'updateIdentifiableElements' is defined and exported.
+--
+-- Instances *must* support every serialization format.
+class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
     type BIndexType bmp  -- ^ Integral type for each coordinate in an index
+    type BPixelType bmp  -- ^ Pixel type of structure
 
-    depth           ::
-        bmp
-     -> Depth                                      -- ^ The color depth of the bitmap in bits
-    dimensions      ::
-        bmp
-     -> Dimensions (BIndexType bmp)                -- ^ Return the width and height of the bitmap in pixels
-    getPixel        ::
-        bmp
-     -> Coordinates (BIndexType bmp)
-     -> Pixel                                      -- ^ Get a pixel; indexing starts at 0
-    constructPixels ::
-        (Coordinates (BIndexType bmp) -> Pixel)
-     -> Dimensions (BIndexType bmp)
-     -> bmp                                        -- ^ Construct a bitmap with a function that returns a pixel for each coordinate with the given dimensions
-                                                   --
-                                                   -- The function should return the same type of pixel for each coordinate.
-                                                   --
-                                                   -- Implementations are not required to call the function in any particular order, and are not even
-                                                   -- required to guarantee that the function will be called for each pixel, which might be true for
-                                                   -- a bitmap that is evaluated lazily as needed.
+    depth                   :: bmp -> Depth
+        -- ^ The color depth of the bitmap in bits
 
-    encodeComplete  :: forall s. (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s)
-     => CompleteBitmapFormat -> bmp -> s           -- ^ Encode the bitmap 
-    decodeComplete  :: forall s. (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s)
-     => s -> [(CompleteBitmapFormat, bmp)]         -- ^ Decode the bitmap; extra bytes after the end should be ignored
-    encodeImage     :: forall s. (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s)
-     => ImageBitmapFormat -> bmp -> s           -- ^ Encode the bitmap; the meta-information is lost
-    decodeImage     :: forall s. (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s)
-     => bmp -> s -> [(ImageBitmapFormat, bmp)]  -- ^ Decode the bitmap; the meta-information is taken from the given bitmap; extra bytes after the end should be ignored
+    dimensions              :: bmp -> Dimensions (BIndexType bmp)
+        -- ^ Return the width and height of the bitmap in pixels
 
-    encodeComplete fmt b = case fmt of
-        (CBF_BMPIU)   ->
-            let header = S.fromStrictByteString . runPut $ do
-                    -- Magic sequence
-                    putWord8 (0x42 :: Word8)
-                    putWord8 (0x4D :: Word8)
+    getPixel                :: bmp -> Coordinates (BIndexType bmp) -> BPixelType bmp
+        -- ^ Get a pixel; indexing starts at 0
 
-                    -- File size
-                    putWord32le (fromIntegral $ 3 * width * height + padding * height + 0x0E + 40  :: Word32)
+    constructPixels         :: (Coordinates (BIndexType bmp) -> BPixelType bmp) -> Dimensions (BIndexType bmp) -> bmp
+        -- ^ Construct a bitmap with a function that returns a pixel for each coordinate with the given dimensions
+        --
+        -- The function should return the same type of pixel for each coordinate.
+        --
+        -- Implementations are not required to call the function in any particular order, and are not even
+        -- required to guarantee that the function will be called for each pixel, which might be true for
+        -- a bitmap that is evaluated lazily as needed.
 
-                    -- Reserved
-                    putWord16le 0x0000
-                    putWord16le 0x0000
+    completeEncoders :: [(CompleteBitmapFormat, CompleteEncoder bmp)]
+        -- ^ Bitmap encoders; default definition is based on 'defaultCompleteEncoders'
+    completeDecoders :: [(CompleteBitmapFormat, CompleteDecoder bmp)]
+        -- ^ Bitmap decodes; extra bytes after the end should be ignored by them; default definition is based on 'defaultCompleteDecoders'
+    imageEncoders    :: [(ImageBitmapFormat,    ImageEncoder    bmp)]
+        -- ^ Bitmap encoders; the meta-information is lost; default definition is based on 'defaultImageEncoders'
+    imageDecoders    :: [(ImageBitmapFormat,    ImageDecoder    bmp)]
+        -- ^ Decode the bitmap; the meta-information from the given bitmap is used (see 'ImageDecoder'); default definition is based on 'defaultImageDecoders'
 
-                    -- Offset
-                    putWord32le (0x0E + 40 :: Word32)
+    completeEncoders = map (second unwrapGenericBitmapSerializer) defaultCompleteEncoders
+    completeDecoders = map (second unwrapGenericBitmapSerializer) defaultCompleteDecoders
+    imageEncoders    = map (second unwrapGenericBitmapSerializer) defaultImageEncoders
+    imageDecoders    = map (second unwrapGenericBitmapSerializer) defaultImageDecoders
 
-                    -- Bitmap information header; BITMAPINFOHEADER
-                    -- header size
-                    putWord32le (40 :: Word32)
-                    -- width
-                    putWord32le (fromIntegral width  :: Word32)
-                    -- height
-                    putWord32le (fromIntegral height  :: Word32)
-                    -- number of color planes
-                    putWord16le (1 :: Word16)
-                    -- bits per pixel / depth
-                    putWord16le (24 :: Word16)
-                    -- compression
-                    putWord32le (0 :: Word32)  -- no compression
-                    -- image size
-                    putWord32le (fromIntegral $ 3 * width * height + padding * height  :: Word32)
-                    -- horizontal resolution; pixel per meter
-                    putWord32le (3000 :: Word32)
-                    -- vertical resolution; pixel per meter
-                    putWord32le (3000 :: Word32)
-                    -- number of colors
-                    putWord32le (0 :: Word32)
-                    -- number of important colors
-                    putWord32le (0 :: Word32)
-                image   = encodeImage IBF_RGB24A4 b
-                padding = case 4 - ((3 * width * height) `mod` 4) of
-                              4 -> 0
-                              n -> n
-            in  header `S.append` image
-
-        (CBF_BMPIU64) -> encode64 . encodeComplete CBF_BMPIU $ b
-
-        where (width, height) = dimensions b
-
-    encodeImage fmt b = case fmt of
-        (IBF_RGB24A4VF) ->
-            let r' i@(row, column)
-                    | column == maxColumn =
-                        if row == 0
-                            then
-                                prep $ S.empty
-                            else
-                                prep $ r' (pred row, 0)
-                    | otherwise           =
-                        prep $ r' (row, succ column)
-                    where pixel = b `getPixel` i
-                          prep  = S.cons3 (S.toMainChar key $ red <: pixel) (S.toMainChar key $ green <: pixel) (S.toMainChar key $ blue <: pixel)
-            in  r' (maxRow, 0)
-        (IBF_RGB24A4)   ->
-            let r' i@(row, column)
-                    | column == maxColumn =
-                        if row == maxRow
-                            then
-                                prep $ S.empty
-                            else
-                                prep $ r' (succ row, 0)
-                    | otherwise           =
-                        prep $ r' (row, succ column)
-                    where pixel = b `getPixel` i
-                          prep  = S.cons3 (S.toMainChar key $ red <: pixel) (S.toMainChar key $ green <: pixel) (S.toMainChar key $ blue <: pixel)
-            in  r' (0, 0)
-
-        where (width, height) = dimensions b
-              maxRow          = abs . pred $ height
-              maxColumn       = abs . pred $ width
-              key             = S.keyStringConstruct :: s
-
-    decodeComplete = catMaybes . (completeDecodes <*>) . pure
-    decodeImage b s = catMaybes $ imageDecodes <*> pure b <*> pure s
-
-decodeCompleteFmt :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                      => CompleteBitmapFormat -> s -> Maybe bmp
-decodeCompleteFmt fmt = (snd <$>) . listToMaybe . filter ((== fmt) . fst) . decodeComplete
-
-decodeImageFmt :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                   => ImageBitmapFormat -> bmp -> s -> Maybe bmp
-decodeImageFmt fmt bmp = (snd <$>) . listToMaybe . filter ((== fmt) . fst) . decodeImage bmp
-
+-- | Convert one bitmap type to another
 convertBitmap :: (Bitmap a, Bitmap b) => a -> b
-convertBitmap b = constructPixels (\(row, column) -> getPixel b (fromIntegral row, fromIntegral column)) (let (width, height) = dimensions b in (fromIntegral width, fromIntegral height))
+convertBitmap b = constructPixels (\(row, column) -> fromPixel $ getPixel b (fromIntegral row, fromIntegral column)) (let (width, height) = dimensions b in (fromIntegral width, fromIntegral height))
 
-completeDecodes :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                    => [s -> Maybe (CompleteBitmapFormat, bmp)]
-completeDecodes =
-    [ f CBF_BMPIU   tryCBF_BMPIU
-    , f CBF_BMPIU64 tryCBF_BMPIU64
+newtype CompleteEncoder bmp = CompleteEncoder {unwrapCompleteEncoder :: (S.StringCells s) => bmp -> s}
+newtype CompleteDecoder bmp = CompleteDecoder {unwrapCompleteDecoder :: (S.StringCells s) => s -> Either String bmp}
+newtype ImageEncoder    bmp = ImageEncoder    {unwrapImageEncoder    :: (S.StringCells s) => bmp -> s}
+newtype ImageDecoder    bmp = ImageDecoder    {unwrapImageDecoder    :: (S.StringCells s) => bmp -> s -> Either String bmp}
+
+newtype GenericBitmapSerializer s = GenericBitmapSerializer {unwrapGenericBitmapSerializer :: (Bitmap bmp) => s bmp}
+
+-- | Update identifiable elements
+--
+-- 'updateIdentifiableElements' @orig new@ returns @orig@ with each matching
+-- pair updated; extraneous replacements in @new@ are ignored.
+updateIdentifiableElements :: (Eq k) => [(k, v)] -> [(k, v)] -> [(k, v)]
+updateIdentifiableElements orig new = map (\(k, v) -> (k, maybe v id $ lookup k new)) orig
+
+defaultCompleteEncoders :: [(CompleteBitmapFormat, GenericBitmapSerializer CompleteEncoder)]
+defaultCompleteEncoders = 
+    [ (CBF_BMPIU,   GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU)
+    , (CBF_BMPIU64, GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU64)
     ]
-    where f fmt tryF = ((fmt, ) <$>) <$> tryF
 
-tryCBF_BMPIU :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                    => s -> Maybe bmp
+encodeCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIU b =
+    let (width, height) = dimensions b
+        header = S.fromLazyByteString . runPut $ do
+            -- Magic sequence
+            putWord8 (0x42 :: Word8)
+            putWord8 (0x4D :: Word8)
+
+            -- File size
+            putWord32le (fromIntegral $ 3 * width * height + padding * height + 0x0E + 40  :: Word32)
+
+            -- Reserved
+            putWord16le 0x0000
+            putWord16le 0x0000
+
+            -- Offset
+            putWord32le (0x0E + 40 :: Word32)
+
+            -- Bitmap information header; BITMAPINFOHEADER
+            -- header size
+            putWord32le (40 :: Word32)
+            -- width
+            putWord32le (fromIntegral width  :: Word32)
+            -- height
+            putWord32le (fromIntegral height  :: Word32)
+            -- number of color planes
+            putWord16le (1 :: Word16)
+            -- bits per pixel / depth
+            putWord16le (24 :: Word16)
+            -- compression
+            putWord32le (0 :: Word32)  -- no compression
+            -- image size
+            putWord32le (fromIntegral $ 3 * width * height + padding * height  :: Word32)
+            -- horizontal resolution; pixel per meter
+            putWord32le (3000 :: Word32)
+            -- vertical resolution; pixel per meter
+            putWord32le (3000 :: Word32)
+            -- number of colors
+            putWord32le (0 :: Word32)
+            -- number of important colors
+            putWord32le (0 :: Word32)
+        image   = encodeImageFmt IBF_RGB24A4VR b
+        padding = case 4 - ((3 * width) `mod` 4) of
+                      4 -> 0
+                      n -> n
+    in  header `S.append` image
+
+encodeCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIU64 = encode64 . encodeCompleteFmt CBF_BMPIU
+
+defaultCompleteDecoders :: [(CompleteBitmapFormat, GenericBitmapSerializer CompleteDecoder)]
+defaultCompleteDecoders =
+    [ (CBF_BMPIU,   GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU)
+    , (CBF_BMPIU64, GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU64)
+    ]
+
+tryCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIU s = do
     let getImgInfo = do
             m0 <- getWord8
@@ -180,7 +194,7 @@ tryCBF_BMPIU s = do
             when (m0 /= 0x42 || m1 /= 0x4D) $ do
                 fail "magic sequence is not that of BMP format"
 
-            -- skip filesize 4, reserved 1, reserved, 1
+            -- skip filesize 4, reserved 2, reserved, 2
             skip 8
 
             offset <- getWord32le
@@ -208,10 +222,10 @@ tryCBF_BMPIU s = do
             when (compression /= 0) $ do
                 fail $ printf "compression with value '%d' which is other than 1 is not supported; needs to be uncompressed RGB" compression
             imageSize <- getWord32le
-            let shouldBeImageSize = 3 * width * height + padding * height
-                padding = case 4 - ((3 * width * height) `mod` 4) of
-                              4 -> 0
-                              n -> n
+            let shouldBeImageSize = (3 * width + padding) * height
+                padding = case (3 * width) `mod` 4 of
+                              0 -> 0
+                              n -> 4 - n
             when (imageSize /= shouldBeImageSize) $ do
                 fail $ printf "imageSize was read to be '%d', but it should be '%d' since the dimensions of the bitmap are (%d, %d)" imageSize shouldBeImageSize width height
             -- skip horRes 4, verRes 4, usedColors 4, importantColors 4
@@ -221,47 +235,232 @@ tryCBF_BMPIU s = do
             when (offset' > 0) $ do
                 skip $ fromIntegral offset'
 
-            flip trace (return ()) $ printf "debug: width %d; height %d" width height
-
             -- get image data
-            imgData <- getByteString (fromIntegral imageSize)
+            imgData <- getLazyByteString (fromIntegral imageSize)
 
             return (width, height, imgData)
-        isIBF_RGB24A4VF ((IBF_RGB24A4VF), _) = True
-        isIBF_RGB24A4VF _                    = False
 
-    --(width, height, imgData) <- either (const Nothing) Just . flip runGet (S.fromStrictByteString s) $ getImgInfo
-    (width, height, imgData) <- either error Just . flip runGet (S.toStrictByteString s) $ getImgInfo  -- TODO use above
-    let metaBitmap = constructPixels (const $ toPixelRGB leastIntensity) (fromIntegral width, fromIntegral height)
-    decodeImageFmt IBF_RGB24A4VF metaBitmap $ imgData
+    (width, height, imgData) <- tablespoon . flip runGet (S.toLazyByteString s) $ getImgInfo
+    let metaBitmap = constructPixels (const leastIntensity) (fromIntegral width, fromIntegral height)
+    decodeImageFmt IBF_RGB24A4VR metaBitmap $ imgData
 
-tryCBF_BMPIU64 :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                    => s -> Maybe bmp
-tryCBF_BMPIU64 s = tryCBF_BMPIU =<< decode64 s
+tryCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIU64 s = tryCBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
-imageDecodes :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                    => [bmp -> s -> Maybe (ImageBitmapFormat, bmp)]
-imageDecodes =
-    [ f IBF_RGB24A4VF tryIBF_RGB24A4VF
+defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
+defaultImageEncoders =
+    [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4)
+    , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4VR)
+    , (IBF_RGB32,     GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32)
     ]
-    where f fmt tryF = \bmp s -> (fmt, ) <$> tryF bmp s
 
-tryIBF_RGB24A4VF :: (S.StringConstruct s, S.StringLength s, S.StringEmpty s, S.StringPack s, S.StringString s, S.StringStrictByteString s, S.StringLazyByteString s, S.StringText s, Bitmap bmp)
-                    => bmp -> s -> Maybe bmp
-tryIBF_RGB24A4VF metaBitmap s
-    | S.length s < minLength = Nothing
-    | otherwise              = Just $
+encodeIBF_RGB24A4 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB24A4 b =
+    let r' i@(row, column)
+            | column > maxColumn =
+                padding `S.append`
+                r' (succ row, 0)
+            | row    > maxRow    =
+                S.empty
+            | otherwise          =
+                S.cons3
+                    (S.toMainChar key $ red   <: pixel)
+                    (S.toMainChar key $ green <: pixel)
+                    (S.toMainChar key $ blue  <: pixel)
+                    $ r' (row, succ column)
+            where pixel = b `getPixel` i
+        paddingSize = case 4 - ((3 * width) `mod` 4) of
+                          4 -> 0
+                          n -> n
+        padding  = S.fromString $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
+    in  r' (0, 0)
+    where (width, height) = dimensions b
+          maxRow          = abs . pred $ height
+          maxColumn       = abs . pred $ width
+          key             = S.keyStringCells :: s
+
+encodeIBF_RGB24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB24A4VR b =
+    let r' i@(row, column)
+            | column > maxColumn =
+                padding `S.append`
+                r' (pred row, 0)
+            | row    < 0         =
+                S.empty
+            | otherwise          =
+                S.cons3
+                    (S.toMainChar key $ red   <: pixel)
+                    (S.toMainChar key $ green <: pixel)
+                    (S.toMainChar key $ blue  <: pixel)
+                    $ r' (row, succ column)
+            where pixel = b `getPixel` i
+        paddingSize = case 4 - ((3 * width) `mod` 4) of
+                          4 -> 0
+                          n -> n
+        padding  = S.fromString $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
+    in  r' (maxRow, 0)
+    where (width, height) = dimensions b
+          maxRow          = abs . pred $ height
+          maxColumn       = abs . pred $ width
+          key             = S.keyStringCells :: s
+
+encodeIBF_RGB32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB32 b =
+    let r' i@(row, column)
+            | column > maxColumn =
+                r' (succ row, 0)
+            | row    > maxRow    =
+                S.empty
+            | otherwise          =
+                S.cons4
+                    padCell
+                    (S.toMainChar key $ red   <: pixel)
+                    (S.toMainChar key $ green <: pixel)
+                    (S.toMainChar key $ blue  <: pixel)
+                    $ r' (row, succ column)
+            where pixel = b `getPixel` i
+    in  r' (0, 0)
+    where (width, height) = dimensions b
+          maxRow          = abs . pred $ height
+          maxColumn       = abs . pred $ width
+          padCell         = S.toMainChar key $ (0x00 :: Word8)
+          key             = S.keyStringCells :: s
+
+defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
+defaultImageDecoders =
+    [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4)
+    , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4VR)
+    , (IBF_RGB32,     GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32)
+    ]
+
+tryIBF_RGB24A4 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB24A4 metaBitmap s
+    | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB24A4: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+    | otherwise              = Right $
         constructPixels pixelf dms
     where (width, height) = dimensions metaBitmap
           dms     = (fromIntegral width, fromIntegral height)
-          padding = case 4 - ((3 * width * height) `mod` 4) of
+          padding = case 4 - ((3 * width) `mod` 4) of
                         4 -> 0
                         n -> n
           bytesPerPixel = 3
           bytesPerRow   = bytesPerPixel * width + padding
-          minLength     = bytesPerRow * height
+          minLength     = fromIntegral $ bytesPerRow * height
           pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral row) + bytesPerPixel * (fromIntegral column)
-                                 in  (red   =: (S.toWord8 . fromJust $ s `S.index` (offset + 0)))
-                                   . (green =: (S.toWord8 . fromJust $ s `S.index` (offset + 1)))
-                                   . (blue  =: (S.toWord8 . fromJust $ s `S.index` (offset + 2)))
-                                   $ toPixelRGB leastIntensity
+                                 in  (red   =: (S.toWord8 $ s `S.index` (offset + 0)))
+                                   . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                   . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                   $ leastIntensity
+
+tryIBF_RGB24A4VR :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB24A4VR metaBitmap s
+    | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB24A4VR: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+    | otherwise              = Right $
+        constructPixels pixelf dms
+    where (width, height) = dimensions metaBitmap
+          dms     = (fromIntegral width, fromIntegral height)
+          padding = case 4 - ((3 * width) `mod` 4) of
+                        4 -> 0
+                        n -> n
+          bytesPerPixel = 3
+          bytesPerRow   = bytesPerPixel * width + padding
+          minLength     = fromIntegral $ bytesPerRow * height
+          maxRow        = abs . pred $ height
+          pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral $ maxRow - row) + bytesPerPixel * (fromIntegral column)
+                                 in  (red   =: (S.toWord8 $ s `S.index` (offset + 0)))
+                                   . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                   . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                   $ leastIntensity
+
+tryIBF_RGB32 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB32 metaBitmap s
+    | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB32: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+    | otherwise              = Right $
+        constructPixels pixelf dms
+    where (width, height) = dimensions metaBitmap
+          dms     = (fromIntegral width, fromIntegral height)
+          bytesPerPixel = 4
+          bytesPerRow   = bytesPerPixel * width
+          minLength     = fromIntegral $ bytesPerRow * height
+          pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral row) + bytesPerPixel * (fromIntegral column)
+                                 in  (red   =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                   . (green =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                   . (blue  =: (S.toWord8 $ s `S.index` (offset + 3)))
+                                   $ leastIntensity
+
+-- | Encode a bitmap
+--
+-- An implementation can choose the most efficient or appropriate
+-- format by placing its encoder first in its list of encoders.
+encodeBitmapComplete :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeBitmapComplete
+    | null encoders = error $ printf "encodeBitmapComplete: implementation defines no encoders"
+    | otherwise     = unwrapCompleteEncoder . snd . head $ encoders
+    where encoders = completeEncoders
+
+-- | Decode a bitmap
+--
+-- The result of first decoder of the implementation that succeeds
+-- will be returned.  If none succeed, 'Nothing' is returned.
+decodeBitmapComplete :: (S.StringCells s, Bitmap bmp) => s -> Maybe (CompleteBitmapFormat, bmp)
+decodeBitmapComplete s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapCompleteDecoder decoder s) $ completeDecoders
+
+-- | Encode the pixels of a bitmap
+--
+-- An implementation can choose the most efficient or appropriate
+-- format by placing its encoder first in its list of encoders.
+encodeBitmapImage :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeBitmapImage
+    | null encoders = error $ printf "encodeBitmapImage: implementation defines no encoders"
+    | otherwise     = unwrapImageEncoder . snd . head $ encoders
+    where encoders = imageEncoders
+
+-- | Decode the pixels of a bitmap
+--
+-- The result of first decoder of the implementation that succeeds
+-- will be returned.  If none succeed, 'Nothing' is returned.
+decodeBitmapImage :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Maybe (ImageBitmapFormat, bmp)
+decodeBitmapImage bmp s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapImageDecoder decoder bmp s) $ imageDecoders
+
+serializeFmt :: (Eq a, Show a) => [(a, b)] -> String -> (a -> b)
+serializeFmt serializers noHandlerErrorFmtStr = \fmt -> case lookup fmt serializers of
+    (Just f)  -> f
+    (Nothing) -> error $
+        printf
+            noHandlerErrorFmtStr
+            (show fmt)
+
+-- | Encode a bitmap in a particular format
+encodeCompleteFmt :: (S.StringCells s, Bitmap bmp) => CompleteBitmapFormat -> bmp -> s
+encodeCompleteFmt = unwrapCompleteEncoder . serializeFmt completeEncoders
+    "encodeCompleteFmt: Bitmap instance did not define handler for encoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultCompleteEncoders' properly?"
+
+-- | Decode a bitmap in a particular format
+decodeCompleteFmt :: (S.StringCells s, Bitmap bmp) => CompleteBitmapFormat -> s -> Either String bmp
+decodeCompleteFmt = unwrapCompleteDecoder . serializeFmt completeDecoders
+    "decodeCompleteFmt: Bitmap instance did not define handler for decoding '%s'; does it use 'updateIdentifiableElements' with 'defaultCompleteDecoders' properly?"
+
+-- | Encode the pixels of a bitmap in a particular format
+encodeImageFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s
+encodeImageFmt    = unwrapImageEncoder . serializeFmt imageEncoders
+    "encodeImageFmt: Bitmap instance did not define handler for encoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultImageEncoders' properly?"
+
+-- | Decode the pixels of a bitmap in a particular format
+decodeImageFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s -> Either String bmp
+decodeImageFmt    = unwrapImageDecoder . serializeFmt imageDecoders
+    "decodeImageFmt: Bitmap instance did not define handler for decoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultImageDecoders' properly?"
+
+handlers :: [Handler (Either String a)]
+handlers = [ Handler $ \(e :: ArithException)   -> return . Left . show $ e
+           , Handler $ \(e :: ArrayException)   -> return . Left . show $ e
+           , Handler $ \(e :: ErrorCall)        -> return . Left . show $ e
+           , Handler $ \(e :: PatternMatchFail) -> return . Left . show $ e
+           , Handler $ \(e :: SomeException)    -> throwIO e
+           ]
+
+-- Hack to catch "pureish" asynchronous errors
+--
+-- This is only used as a workaround to the bitmap library's shortcoming of using asynchronous errors instead of pure error handling, and
+-- also zlib's same shortcoming.
+tablespoon :: a -> Either String a
+tablespoon x = unsafePerformIO $ (Right `fmap` evaluate x) `catches` handlers

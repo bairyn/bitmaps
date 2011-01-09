@@ -5,7 +5,6 @@ module Data.Bitmap.Foreign
     , BitmapForeign(..)
     ) where
 
-import Control.Monad
 import Control.Monad.Record
 import qualified Data.Bitmap      as FB
 import qualified Data.Bitmap.IO   as FB
@@ -29,6 +28,7 @@ newtype BitmapForeign = BitmapForeign {unwrapBitmapForeign :: FBBitmapBase Pixel
 
 instance Bitmap BitmapForeign where
     type BIndexType BitmapForeign = Int
+    type BPixelType BitmapForeign = PixelRGB
 
     depth (BitmapForeign b) = unsafePerformIO . FB.withBitmap b $ \_ numComponents _ _ -> case numComponents of
         3 -> return Depth24RGB
@@ -41,25 +41,12 @@ instance Bitmap BitmapForeign where
         let bytesPixel = numComponents
             bytesRow   = bytesPixel * w + padding
             offset     = bytesRow * row + bytesPixel * column
-        if numComponents == 3
-            then do
-                (thisRed   :: PixelComponent) <- peekByteOff ptr offset
-                (thisGreen :: PixelComponent) <- peekByteOff ptr (offset + 1)
-                (thisBlue  :: PixelComponent) <- peekByteOff ptr (offset + 2)
-                return . (red =: thisRed) . (green =: thisGreen) . (blue =: thisBlue) . toPixelRGB $ leastIntensity
-            else do
-                (thisRed   :: PixelComponent) <- peekByteOff ptr offset
-                (thisGreen :: PixelComponent) <- peekByteOff ptr (offset + 1)
-                (thisBlue  :: PixelComponent) <- peekByteOff ptr (offset + 2)
-                (thisAlpha :: PixelComponent) <- peekByteOff ptr (offset + 3)
-                return . (red =: thisRed) . (green =: thisGreen) . (blue =: thisBlue) . (alpha =: thisAlpha) . toPixelRGB $ leastIntensity
+        (thisRed   :: PixelComponent) <- peekByteOff ptr offset
+        (thisGreen :: PixelComponent) <- peekByteOff ptr (offset + 1)
+        (thisBlue  :: PixelComponent) <- peekByteOff ptr (offset + 2)
+        return . (red =: thisRed) . (green =: thisGreen) . (blue =: thisBlue) $ leastIntensity
     constructPixels f dms@(w, _) = unsafePerformIO $ do
-        let isAlpha = case f (0, 0) of
-                (PixelRGB  _) -> False
-                (PixelBGR  _) -> False
-                (PixelRGBA _) -> True
-                (PixelBGRA _) -> True
-            bytesPixel = if isAlpha then 4 else 3
+        let bytesPixel = 3
         fbBitmap <- FB.newBitmap dms bytesPixel (Just 4)
         FB.withBitmap fbBitmap $ \(width, height) _ padding ptr -> do
             let bytesRow  = bytesPixel * w + padding
@@ -71,8 +58,6 @@ instance Bitmap BitmapForeign where
                     pokeByteOff ptr offset           $ red   <: pixel
                     pokeByteOff ptr (offset + 1)     $ green <: pixel
                     pokeByteOff ptr (offset + 2)     $ blue  <: pixel
-                    when (isAlpha) $ do
-                        pokeByteOff ptr (offset + 3) $ alpha <: pixel
                     if column == maxColumn
                         then do
                             if row == maxRow

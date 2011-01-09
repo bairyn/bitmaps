@@ -32,9 +32,9 @@ ibytes64 = M.fromList $ map (\ ~(a_, b_) -> (b_, a_)) . assocs $ bytes64
 fillByte64 :: Word8
 fillByte64 = 0x3D
 
-encode64 :: forall s. (StringConstruct s, StringLength s, StringEmpty s) => s -> s
+encode64 :: forall s. (StringCells s) => s -> s
 encode64 s
-    | (Just (a, b, c, s')) <- uncons3 s =
+    | (Just (a, b, c, s')) <- safeUncons3 s =
         let a'  = toWord8 a
             b'  = toWord8 b
             c'  = toWord8 c
@@ -43,16 +43,16 @@ encode64 s
             c'' = base $ ((b' .&. 0x0F) `shiftL` 2) .|. (c' `shiftR` 6)
             d'' = base $ c' .&. 0x3F
         in  cons4 a'' b'' c'' d'' $ encode64 s'
-    | 2 <- length s  :: Integer         =
-        let ~(Just (a, b, _)) = uncons2 s
+    | 2 <- length s                     =
+        let ~(Just (a, b, _)) = safeUncons2 s
             a'  = toWord8 a
             b'  = toWord8 b
             a'' = base $ a' `shiftR` 2
             b'' = base $ ((a' .&. 0x03) `shiftL` 4) .|. (b' `shiftR` 4)
             c'' = base $ (b' .&. 0x0F) `shiftL` 2
         in cons4 a'' b'' c'' fillByte64' $ empty
-    | 1 <- length s  :: Integer         =
-        let ~(Just (a, _)) = uncons s
+    | 1 <- length s                     =
+        let ~(Just (a, _)) = safeUncons s
             a'  = toWord8 a
             a'' = base $ a' `shiftR` 2
             b'' = base $ (a' .&. 0x03) `shiftL` 4
@@ -61,11 +61,11 @@ encode64 s
         empty
     where base = toMainChar key . (bytes64 !) . toWord8
           fillByte64' = toMainChar key fillByte64
-          key = keyStringConstruct :: s
+          key = keyStringCells :: s
 
-decode64 :: forall s. (StringConstruct s, StringEmpty s) => s -> Maybe s
+decode64 :: forall s. (StringCells s) => s -> Maybe s
 decode64 s
-    | (Just (a, b, c, d, s')) <- uncons4 s = do
+    | (Just (a, b, c, d, s')) <- safeUncons4 s = do
           let n x
                   | (toWord8 x) == fillByte64                 = Just 0xFF  -- no regular base 64 digit can match with 0xFF; use this so we know whether a byte is a fill byte
                   | (Just y) <- M.lookup (toWord8 x) ibytes64 = Just y
@@ -100,4 +100,4 @@ decode64 s
                             $ empty
     | otherwise =
         Just empty
-    where key = keyStringConstruct :: s
+    where key = keyStringCells :: s

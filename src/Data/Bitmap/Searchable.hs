@@ -3,10 +3,6 @@ module Data.Bitmap.Searchable
     ) where
 
 import Data.Bitmap.Class
-import Data.Bitmap.Pixel
-
-import Debug.Trace---------------------------------------------------
-import Text.Printf
 
 -- | Class for searchable bitmaps
 --
@@ -16,7 +12,7 @@ import Text.Printf
 -- to write more efficient versions.
 class (Bitmap bmp) => BitmapSearchable bmp where
     findPixel ::
-        (Pixel -> Bool)
+        (BPixelType bmp -> Bool)
      -> bmp
      -> Maybe (BIndexType bmp, BIndexType bmp)  -- ^ Scan each pixel until a match is found in no particular order
                                                 --
@@ -25,18 +21,18 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                                                 -- This function is often, but not necessarily always, the same as
                                                 -- 'findPixelOrder'.
     findPixelOrder ::
-        (Pixel -> Bool)
+        (BPixelType bmp -> Bool)
      -> bmp
      -> Maybe (BIndexType bmp, BIndexType bmp)  -- ^ Scan each pixel, row by row from the left, until a match is found
     findPixelEqual ::
-        Pixel
+        BPixelType bmp
      -> bmp
      -> Maybe (BIndexType bmp, BIndexType bmp)  -- ^ A more restricted version of 'findPixel' that is usually more efficient when exact equality is desired
                                                 --
                                                 -- NB: Pixels are only equal if their types are equal, not just their components.  For component
                                                 -- equivalence, use 'eqPixelValue' and 'findPixel'.
     findSubBitmap ::
-        (Pixel -> Pixel -> Bool)
+        (BPixelType bmp -> BPixelType bmp -> Bool)
      -> bmp  -- Super bitmap
      -> bmp  -- Sub bitmap
      -> Maybe (BIndexType bmp, BIndexType bmp)  -- ^ Search for where a sub-bitmap would match
@@ -62,45 +58,44 @@ class (Bitmap bmp) => BitmapSearchable bmp where
 
     findPixelOrder f b = r' (0, 0)
         where r' i@(row, column)
-                  | f $ getPixel b i    = Just i
-                  | column == maxColumn =
-                      if row == maxRow
-                          then
-                              Nothing
-                          else
-                              r' (succ row, 0)
-                  | otherwise =
+                  | column > maxColumn =
+                      r' (succ row, 0)
+                  | row    > maxRow    =
+                      Nothing
+                  | f $ getPixel b i   =
+                      Just i
+                  | otherwise          =
                       r' (row, succ column)
 
               (width, height) = dimensions b
-              (maxRow, maxColumn) = (abs . pred $ height, abs . pred $ width)
+              maxRow    = abs . pred $ height
+              maxColumn = abs . pred $ width
 
     findPixelEqual p = findPixel (== p)
 
     findSubBitmap f super sub = r' (0, 0)
         where r' i@(row, column)
-                  | matches i           = Just i
-                  | column >= maxColumn =
-                      if row >= maxRow
-                          then
-                              Nothing
-                          else
-                              r' (succ row, 0)
-                  | otherwise =
+                  | column > maxColumn =
+                      r' (succ row, 0)
+                  | row    > maxRow    =
+                      Nothing
+                  | matches (0, 0)     =
+                      Just i
+                  | otherwise          =
                       r' (row, succ column)
+                  where matches offi@(offRow, offColumn)
+                            | offColumn > maxOffColumn                                                        =
+                                matches (succ offRow, 0)
+                            | offRow    > maxOffRow                                                           =
+                                True
+                            | not $ f (getPixel super (row + offRow, column + offColumn)) (getPixel sub offi) =
+                                False
+                            | otherwise                                                                       =
+                                matches (offRow, succ offColumn)
 
-              (widthSuper, heightSuper) = dimensions super
-              (widthSub,   heightSub)   = dimensions sub
-              (maxRow,     maxColumn)   = (heightSuper - heightSub, widthSuper - widthSub)
-
-              matches (superRow, superColumn) = r'' (0, 0)
-                  where r'' subi@(offRow, offColumn)
-                            | not $ f (getPixel super (superRow + offRow, superColumn + offColumn)) (getPixel sub subi) = trace (printf "nope (%d, %d); off (%d, %d)" (fromIntegral superRow :: Integer) (fromIntegral superColumn :: Integer) (fromIntegral offRow :: Integer) (fromIntegral offColumn :: Integer)) False
-                            | offColumn >= (abs . pred $ widthSub) =
-                                if offRow == (abs . pred $ heightSub)
-                                    then True
-                                    else r'' (succ offRow, 0)
-                            | otherwise =
-                                r'' (offRow, succ offColumn)
+              (widthSuper, heightSuper)  = dimensions super
+              (widthSub,   heightSub)    = dimensions sub
+              (maxRow,     maxColumn)    = (heightSuper - heightSub, widthSuper - widthSub)
+              (maxOffRow,  maxOffColumn) = (abs . pred $ heightSub, abs . pred $ widthSub)
 
     findSubBitmapEqual = findSubBitmap (==)

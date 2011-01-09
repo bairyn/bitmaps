@@ -5,17 +5,16 @@ module Data.Bitmap.Array.Internal
     ) where
 
 import Data.Array.Unboxed
+import Data.Binary
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
-import Data.Serialize
-import Data.Word
 
 -- | Arrays of 32-bit RGBA pixels
 newtype BitmapArray = BitmapArray {unwrapBitmapArray :: UArray (Integer, Integer) Word32}
-    deriving (Eq, Ord, Serialize)
+    deriving (Eq, Ord, Binary)
 
 -- | Instance for debugging purposes
 instance Show BitmapArray where
@@ -24,6 +23,7 @@ instance Show BitmapArray where
 
 instance Bitmap BitmapArray where
     type BIndexType BitmapArray = Integer
+    type BPixelType BitmapArray = PixelRGBA
 
     depth = const Depth32RGBA
 
@@ -35,7 +35,8 @@ instance Bitmap BitmapArray where
 
     constructPixels f (width, height) = let maxRow    = abs . pred $ height
                                             maxColumn = abs . pred $ width
-                                        in  BitmapArray . array ((0, 0), (maxRow, maxColumn)) $ [(i, unwrapPixelStorage . toPixelRGBA . f $ i) | row <- [0..maxRow], column <- [0..maxColumn], let i = (row, column)]
+                                            f'        = unwrapPixelRGBA . toPixelRGBA . f
+                                        in  BitmapArray . array ((0, 0), (maxRow, maxColumn)) $ [(i, f' i) | row <- [0..maxRow], column <- [0..maxColumn], let i = (row, column)]
 
 instance BitmapSearchable  BitmapArray
 instance BitmapReflectable BitmapArray
