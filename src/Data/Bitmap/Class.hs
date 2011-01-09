@@ -44,7 +44,6 @@ module Data.Bitmap.Class
     ) where
 
 import Codec.Compression.Zlib
-import Codec.String.Base16
 import Codec.String.Base64
 import Control.Monad.Record
 import Control.Arrow
