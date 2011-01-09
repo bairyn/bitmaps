@@ -20,6 +20,9 @@ module Data.Bitmap.Class
     , tryCBF_BMPIU
     , tryCBF_BMPIU64
     , defaultImageEncoders
+    , encodeIBF_RGB24A4
+    , encodeIBF_RGB24A4VR
+    , encodeIBF_RGB32
     , defaultImageDecoders
     , tryIBF_RGB24A4
     , tryIBF_RGB24A4VR
