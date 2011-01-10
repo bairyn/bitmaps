@@ -120,9 +120,9 @@ newtype PixelBGRA = PixelBGRA {unwrapPixelBGRA :: PixelStorage}
     deriving (Eq, Bounded, Enum, Ord, Real, Integral, Bits, Num, Show, Data, Typeable)
 
 byteLens :: (Integral p, Bits p) => Integer -> (p :-> Word8)
-byteLens 0 = lens (fromIntegral) (\w p -> p .|. fromIntegral w)
+byteLens 0 = lens (fromIntegral) (\w p -> (p .&. complement 0xFF) .|. fromIntegral w)
 byteLens i = let i' = fromIntegral i
-             in  lens (fromIntegral . (`shiftR` i')) (\w p -> p .|. fromIntegral w `shiftL` i')
+             in  lens (fromIntegral . (`shiftR` i')) (\w p -> (p .&. complement (0xFF `shiftL` i')) .|. fromIntegral w `shiftL` i')
 
 instance Pixel PixelRGB where
     red   = byteLens 16
@@ -141,17 +141,17 @@ instance Pixel PixelBGR where
     fromPixel = toPixelBGR
 
 instance Pixel PixelRGBA where
-    red   = byteLens 8
+    red   = byteLens 24
     green = byteLens 16
-    blue  = byteLens 24
+    blue  = byteLens 8
     alpha = Just $ byteLens 0
     toPixel   = fromPixelRGBA
     fromPixel = toPixelRGBA
 
 instance Pixel PixelBGRA where
-    red   = byteLens 24
+    red   = byteLens 8
     green = byteLens 16
-    blue  = byteLens 8
+    blue  = byteLens 24
     alpha = Just $ byteLens 0
     toPixel   = fromPixelBGRA
     fromPixel = toPixelBGRA
