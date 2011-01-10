@@ -31,7 +31,7 @@ decodeHex s
     , (Just w) <- (maybeRead $ "0x" ++ [toChar $ a] ++ [toChar $ b]  :: Maybe Word8)
         = ((toMainChar key w) `cons`) <$> decodeHex s'
     | otherwise
-        = Nothing
+        = Just empty
     where key = keyStringCells :: s
 
 (++) :: (Monoid a) => a -> a -> a
