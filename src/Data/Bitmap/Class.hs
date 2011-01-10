@@ -45,9 +45,10 @@ module Data.Bitmap.Class
 
 import Codec.Compression.Zlib
 import Codec.String.Base64
-import Control.Monad.Record
+import Control.Applicative
 import Control.Arrow
 import Control.Monad
+import Control.Monad.Record
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -257,10 +258,10 @@ tryCBF_BMPIU s = do
     decodeImageFmt IBF_RGB24A4VR metaBitmap $ imgData
 
 tryCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
-tryCBF_BMPIU64 s = tryCBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
+tryCBF_BMPIU64 s = decodeCompleteFmt CBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 tryCBF_BMPIUZ64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
-tryCBF_BMPIUZ64 s = tryCBF_BMPIU =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIUZ64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
+tryCBF_BMPIUZ64 s = decodeCompleteFmt CBF_BMPIU =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIUZ64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
 defaultImageEncoders =
@@ -343,7 +344,7 @@ encodeIBF_RGB32 b =
           key             = S.keyStringCells :: s
 
 encodeIBF_RGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeIBF_RGB32
+encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeImageFmt IBF_RGB32
 
 defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
 defaultImageDecoders =
@@ -409,7 +410,7 @@ tryIBF_RGB32 metaBitmap s
                                    $ leastIntensity
 
 tryIBF_RGB32Z64 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
-tryIBF_RGB32Z64 metaBitmap s = tryIBF_RGB32 metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_RGB32Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
+tryIBF_RGB32Z64 metaBitmap s = decodeImageFmt IBF_RGB32 metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_RGB32Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 -- | Encode a bitmap
 --

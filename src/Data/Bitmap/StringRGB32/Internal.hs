@@ -4,14 +4,10 @@ module Data.Bitmap.StringRGB32.Internal
     ( BitmapImageString(..)
     , BitmapStringRGB32(..), bmps_dimensions, bmps_data
     , encodeIBF_RGB32'
-    , encodeIBF_RGB32Z64'
     , tryIBF_RGB32'
-    , tryIBF_RGB32Z64'
     , padByte
     ) where
 
-import Codec.String.Base64
-import Codec.Compression.Zlib
 import Control.Applicative
 import Control.Arrow
 import Control.Monad.Record
@@ -21,7 +17,6 @@ import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
-import Data.Bitmap.Util
 import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.String.Class    as S
@@ -93,19 +88,14 @@ instance Bitmap BitmapStringRGB32 where
 
     imageEncoders = updateIdentifiableElements (map (second unwrapGenericBitmapSerializer) defaultImageEncoders) $
         [ (IBF_RGB32,    ImageEncoder $ encodeIBF_RGB32')
-        , (IBF_RGB32Z64, ImageEncoder $ encodeIBF_RGB32Z64')
         ]
 
     imageDecoders = updateIdentifiableElements (map (second unwrapGenericBitmapSerializer) defaultImageDecoders) $
         [ (IBF_RGB32,    ImageDecoder $ tryIBF_RGB32')
-        , (IBF_RGB32Z64, ImageDecoder $ tryIBF_RGB32Z64')
         ]
 
 encodeIBF_RGB32' :: (S.StringCells s) => BitmapStringRGB32 -> s
 encodeIBF_RGB32' b = case (bmps_data <: b) of (BitmapImageString s) -> S.fromStringCells s
-
-encodeIBF_RGB32Z64' :: (S.StringCells s) => BitmapStringRGB32 -> s
-encodeIBF_RGB32Z64' = encode64 . S.fromStringCells . compress . encodeIBF_RGB32'
 
 tryIBF_RGB32' :: (S.StringCells s) => BitmapStringRGB32 -> s -> Either String BitmapStringRGB32
 tryIBF_RGB32' bmp s
@@ -114,9 +104,6 @@ tryIBF_RGB32' bmp s
         (bmps_data =: BitmapImageString s) bmp
     where (width, height) = bmps_dimensions <: bmp
           minLength       = 4 * width * height
-
-tryIBF_RGB32Z64' :: (S.StringCells s) => BitmapStringRGB32 -> s -> Either String BitmapStringRGB32
-tryIBF_RGB32Z64' metaBitmap s = tryIBF_RGB32' metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.StringRGB32.tryIBF_RGB32Z64': not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 padByte :: Word8
 padByte = 0x00
