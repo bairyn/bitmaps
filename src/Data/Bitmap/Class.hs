@@ -22,11 +22,13 @@ module Data.Bitmap.Class
     , tryCBF_BMPIU64
     , tryCBF_BMPIUZ64
     , defaultImageEncoders
+    , encodeIBF_IDRGB24Z64
     , encodeIBF_RGB24A4
     , encodeIBF_RGB24A4VR
     , encodeIBF_RGB32
     , encodeIBF_RGB32Z64
     , defaultImageDecoders
+    , tryIBF_IDRGB24Z64
     , tryIBF_RGB24A4
     , tryIBF_RGB24A4VR
     , tryIBF_RGB32
@@ -55,6 +57,7 @@ import Data.Binary.Put
 import Data.Bitmap.Pixel
 import Data.Bitmap.Types
 import Data.Bitmap.Util
+import qualified Data.ByteString as B  -- For zlib
 import Data.Maybe
 import qualified Data.String.Class as S
 import Text.Printf
@@ -265,94 +268,160 @@ tryCBF_BMPIUZ64 s = decodeCompleteFmt CBF_BMPIU =<< tablespoon . decompress . S.
 
 defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
 defaultImageEncoders =
-    [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4)
-    , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4VR)
-    , (IBF_RGB32,     GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32)
-    , (IBF_RGB32Z64,  GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32Z64)
+    [ (IBF_IDRGB24Z64, GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDRGB24Z64)
+    , (IBF_RGB24A4,    GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4)
+    , (IBF_RGB24A4VR,  GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4VR)
+    , (IBF_RGB32,      GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32)
+    , (IBF_RGB32Z64,   GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32Z64)
     ]
+
+encodeIBF_IDRGB24Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDRGB24Z64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'm') `S.cons`) . encode64 . S.fromStringCells . compress
+    $ S.unfoldrN (fromIntegral $ 3 * width * height) getComponent (0, 0, 0 :: Int)
+    where getComponent (row, column, orgb)
+              | orgb   > 2         =
+                  getComponent (row, succ column, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (row, column)
+                      componentGetter =
+                          case orgb of
+                              0 -> S.toMainChar key . (red   <:)
+                              1 -> S.toMainChar key . (green <:)
+                              2 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow    = abs . pred $ height
+          maxColumn = abs . pred $ width
+          key       = S.keyStringCells :: B.ByteString
 
 encodeIBF_RGB24A4 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4 b =
-    let r' i@(row, column)
-            | column > maxColumn =
-                padding `S.append`
-                r' (succ row, 0)
-            | row    > maxRow    =
-                S.empty
-            | otherwise          =
-                S.cons3
-                    (S.toMainChar key $ red   <: pixel)
-                    (S.toMainChar key $ green <: pixel)
-                    (S.toMainChar key $ blue  <: pixel)
-                    $ r' (row, succ column)
-            where pixel = b `getPixel` i
-        paddingSize = case 4 - ((3 * width) `mod` 4) of
-                          4 -> 0
-                          n -> n
-        padding  = S.fromStringCells $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
-    in  r' (0, 0)
-    where (width, height) = dimensions b
-          maxRow          = abs . pred $ height
-          maxColumn       = abs . pred $ width
-          key             = S.keyStringCells :: s
+    S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
+    where getComponent (row, column, orgb, paddingLeft)
+              | paddingLeft > 0    =
+                  Just (padCell, (row, column, orgb, pred paddingLeft))
+              | orgb   > 2         =
+                  getComponent (row, succ column, 0, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0, paddingSize)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (row, column)
+                      componentGetter =
+                          case orgb of
+                              0 -> S.toMainChar key . (red   <:)
+                              1 -> S.toMainChar key . (green <:)
+                              2 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb, 0))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow      = abs . pred $ height
+          maxColumn   = abs . pred $ width
+          paddingSize = case 4 - ((3 * width) `mod` 4) of
+                            4 -> 0
+                            n -> n
+          padCell     = S.toMainChar key $ padByte
+          key         = S.keyStringCells :: s
 
 encodeIBF_RGB24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4VR b =
-    let r' i@(row, column)
-            | column > maxColumn =
-                padding `S.append`
-                r' (pred row, 0)
-            | row    < 0         =
-                S.empty
-            | otherwise          =
-                S.cons3
-                    (S.toMainChar key $ red   <: pixel)
-                    (S.toMainChar key $ green <: pixel)
-                    (S.toMainChar key $ blue  <: pixel)
-                    $ r' (row, succ column)
-            where pixel = b `getPixel` i
-        paddingSize = case 4 - ((3 * width) `mod` 4) of
-                          4 -> 0
-                          n -> n
-        padding  = S.fromStringCells $ replicate (fromIntegral paddingSize) (S.toChar (0x00 :: Word8))
-    in  r' (maxRow, 0)
-    where (width, height) = dimensions b
-          maxRow          = abs . pred $ height
-          maxColumn       = abs . pred $ width
-          key             = S.keyStringCells :: s
+    S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
+    where getComponent (row, column, orgb, paddingLeft)
+              | paddingLeft > 0    =
+                  Just (padCell, (row, column, orgb, pred paddingLeft))
+              | orgb   > 2         =
+                  getComponent (row, succ column, 0, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0, paddingSize)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (maxRow - row, column)
+                      componentGetter =
+                          case orgb of
+                              0 -> S.toMainChar key . (red   <:)
+                              1 -> S.toMainChar key . (green <:)
+                              2 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb, 0))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow      = abs . pred $ height
+          maxColumn   = abs . pred $ width
+          paddingSize = case 4 - ((3 * width) `mod` 4) of
+                            4 -> 0
+                            n -> n
+          padCell     = S.toMainChar key $ padByte
+          key         = S.keyStringCells :: s
 
 encodeIBF_RGB32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32 b =
-    let r' i@(row, column)
-            | column > maxColumn =
-                r' (succ row, 0)
-            | row    > maxRow    =
-                S.empty
-            | otherwise          =
-                S.cons4
-                    padCell
-                    (S.toMainChar key $ red   <: pixel)
-                    (S.toMainChar key $ green <: pixel)
-                    (S.toMainChar key $ blue  <: pixel)
-                    $ r' (row, succ column)
-            where pixel = b `getPixel` i
-    in  r' (0, 0)
-    where (width, height) = dimensions b
-          maxRow          = abs . pred $ height
-          maxColumn       = abs . pred $ width
-          padCell         = S.toMainChar key $ (0x00 :: Word8)
-          key             = S.keyStringCells :: s
+    S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
+    where getComponent (row, column, orgb)
+              | orgb   > 3         =
+                  getComponent (row, succ column, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (row, column)
+                      componentGetter =
+                          case orgb of
+                              0 -> const padCell
+                              1 -> S.toMainChar key . (red   <:)
+                              2 -> S.toMainChar key . (green <:)
+                              3 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow    = abs . pred $ height
+          maxColumn = abs . pred $ width
+          padCell   = S.toMainChar key $ padByte
+          key       = S.keyStringCells :: s
 
 encodeIBF_RGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeImageFmt IBF_RGB32
 
 defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
 defaultImageDecoders =
-    [ (IBF_RGB24A4,   GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4)
-    , (IBF_RGB24A4VR, GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4VR)
-    , (IBF_RGB32,     GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32)
-    , (IBF_RGB32Z64,  GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32Z64)
+    [ (IBF_IDRGB24Z64, GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDRGB24Z64)
+    , (IBF_RGB24A4,    GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4)
+    , (IBF_RGB24A4VR,  GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4VR)
+    , (IBF_RGB32,      GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32)
+    , (IBF_RGB32Z64,   GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32Z64)
     ]
+
+tryIBF_IDRGB24Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDRGB24Z64 metaBitmap s_ = tryIBF_IDRGB24Z64' =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_IDRGB24Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s_)
+    where tryIBF_IDRGB24Z64' :: (S.StringCells s2) => s2 -> Either String bmp
+          tryIBF_IDRGB24Z64' s
+              | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_IDRGB24Z64: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+              | otherwise              = Right $
+                  constructPixels pixelf dms
+              where (width, height) = dimensions metaBitmap
+                    dms     = (fromIntegral width, fromIntegral height)
+                    bytesPerPixel = 3
+                    bytesPerRow   = bytesPerPixel * width
+                    minLength     = fromIntegral $ bytesPerRow * height
+                    pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral row) + bytesPerPixel * (fromIntegral column)
+                                           in  (red   =: (S.toWord8 $ s `S.index` (offset + 0)))
+                                             . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                             . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                             $ leastIntensity
 
 tryIBF_RGB24A4 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_RGB24A4 metaBitmap s
@@ -492,3 +561,6 @@ decodeImageDimensions dms = decodeImage (constructPixels (const leastIntensity) 
 -- | Decode an image with the given dimensions as 'decodeImageDimensions' does it, but in a specific format
 decodeImageDimensionsFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
 decodeImageDimensionsFmt fmt dms = decodeImageFmt fmt (constructPixels (const leastIntensity) dms)
+
+padByte :: Word8
+padByte = 0x00
