@@ -47,9 +47,13 @@ data CompleteBitmapFormat =
 
 -- | Formats for raw image data that don't include information such as dimensions
 data ImageBitmapFormat =
-    IBF_IDRGB24Z64  -- ^ Series of red, green, and blue; the string is compressed and then base-64 encoded; the encoded string begins with an 'm' for simpler identification
-  | IBF_RGB24A4VR   -- ^ Series of red, green, blue, red, etc. with a row alignment of 4, stored upside-down
-  | IBF_RGB24A4     -- ^ Series of red, green, blue, red, etc. with a row alignment of 4
-  | IBF_RGB32       -- ^ Series of unused byte, red, green, and blue
-  | IBF_RGB32Z64    -- ^ Series of unused byte, red, green, and blue; the string is compressed and then base-64 encoded
+    IBF_IDRGB24Z64     -- ^ Series of red, green, and blue; the string is compressed and then base-64 encoded; the encoded string is prepended with an 'm' for simpler identification
+  | IBF_IDBGR24R2RZ64  -- ^ Series of blue, green, and red, that is rotated two bytes right; the string is compressed and then base-64 encoded; the encoded string is prepended with a 'b' for simpler identification
+  | IBF_IDBGR24HZH     -- ^ Series of red, green, and blue; the string is hex encoded, then compressed, then hex encoded again; the encoded string is prepended with with 'z'
+  | IBF_BGR24H         -- ^ Series of red, green, and blue, represented as a series of hexadecimal pairs
+  | IBF_BGR24A4VR      -- ^ Series of blue, green, red, blue, etc. with a row alignment of 4, stored upside-down
+  | IBF_RGB24A4VR      -- ^ Series of red, green, blue, red, etc. with a row alignment of 4, stored upside-down
+  | IBF_RGB24A4        -- ^ Series of red, green, blue, red, etc. with a row alignment of 4
+  | IBF_RGB32          -- ^ Series of unused byte, red, green, and blue
+  | IBF_RGB32Z64       -- ^ Series of unused byte, red, green, and blue; the string is compressed and then base-64 encoded
     deriving (Eq, Ord, Enum, Bounded, Show, Read, Typeable, Data)

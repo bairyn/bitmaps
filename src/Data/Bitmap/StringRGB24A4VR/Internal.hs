@@ -21,6 +21,7 @@ import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
+import Data.Bitmap.Util
 import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.String.Class    as S
@@ -140,9 +141,6 @@ padByte = 0x00
 imageSize :: Dimensions Int -> Int
 imageSize (width, height) = (fst $ bytesPerRow width 3 4) * height
 
-subStr :: (S.StringCells s) => Int -> Int -> s -> s
-subStr index length_ = S.take length_ . S.drop index
-
 instance BitmapSearchable BitmapStringRGB24A4VR where
     findSubBitmapEqual super sub = case (bmps_data <: super, bmps_data <: sub) of
         ((BitmapImageString dataSuper), (BitmapImageString dataSub)) ->
@@ -173,6 +171,6 @@ instance BitmapSearchable BitmapStringRGB24A4VR where
                                   = False
                               | otherwise
                                   = matches (succ offRow)
-            in r' (0, 0)
+            in r'
 
 instance BitmapReflectable BitmapStringRGB24A4VR

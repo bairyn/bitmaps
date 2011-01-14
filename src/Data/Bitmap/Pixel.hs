@@ -30,13 +30,17 @@ module Data.Bitmap.Pixel
     , greatestIntensityGen
 
     , bigEndian
+
+    , colorString
     ) where
 
+import Codec.String.Base16
 import Control.Applicative
 import Control.Monad.Record
 import Data.Bits
 import Data.Data
 import Data.Maybe
+import qualified Data.String.Class as S
 import Data.Word
 import Foreign (unsafePerformIO)
 import Foreign.C.Types
@@ -354,3 +358,16 @@ greatestIntensityGen = (genRed   =: greatestIntensityGenComponent)
 
 bigEndian :: Bool
 bigEndian = unsafePerformIO $ with (1 :: CInt) $ \p -> (0 ==) <$> (peek (castPtr p :: Ptr CChar))
+
+-- | Return a color from the first 6-bytes of a string representing the red, green, and blue components of the color
+--
+-- > (colorString "FF0000"  :: Maybe PixelRGBA) == Just $ (red =: 0xFF) . (green =: 0x00) . (blue =: 0x00) $ greatestIntensity
+colorString :: (S.StringCells s, Pixel p) => s -> Maybe p
+colorString s =
+    case S.safeUncons3 =<< decodeHex s of
+        (Just (byteRed, byteGreen, byteBlue, _)) -> Just $
+            (red   =: S.toWord8 byteRed)
+          . (green =: S.toWord8 byteGreen)
+          . (blue  =: S.toWord8 byteBlue)
+          $ greatestIntensity
+        (Nothing) -> Nothing

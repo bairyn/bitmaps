@@ -17,6 +17,7 @@ import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
+import Data.Bitmap.Util
 import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.String.Class    as S
@@ -108,9 +109,6 @@ tryIBF_RGB32' bmp s
 padByte :: Word8
 padByte = 0x00
 
-subStr :: (S.StringCells s) => Int -> Int -> s -> s
-subStr index length_ = S.take length_ . S.drop index
-
 instance BitmapSearchable BitmapStringRGB32 where
     findSubBitmapEqual super sub = case (bmps_data <: super, bmps_data <: sub) of
         ((BitmapImageString dataSuper), (BitmapImageString dataSub)) ->
@@ -137,6 +135,6 @@ instance BitmapSearchable BitmapStringRGB32 where
                               | (S.toStringCells :: S.StringCells s => s -> B.ByteString) (subStr (superBaseIndex + offRow * superBytesPerRow) subBytesPerRow dataSuper) /= (S.toStringCells :: (S.StringCells s) => s -> B.ByteString) (subStr (offRow * subBytesPerRow) subBytesPerRow dataSub) =
                                   False
                               | otherwise       = matches (succ offRow)
-            in r' (0, 0)
+            in r'
 
 instance BitmapReflectable BitmapStringRGB32

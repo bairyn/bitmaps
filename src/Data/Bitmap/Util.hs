@@ -5,9 +5,11 @@
 -- It is intended primarily for use by this library itself.
 module Data.Bitmap.Util
     ( tablespoon
+    , subStr
     ) where
 
 import Control.Exception
+import qualified Data.String.Class as S
 import System.IO.Unsafe (unsafePerformIO)
 
 handlers :: [Handler (Either String a)]
@@ -28,3 +30,12 @@ handlers = [ Handler $ \(e :: ArithException)   -> return . Left . show $ e
 -- except that it can return more information when an exception is caught.
 tablespoon :: a -> Either String a
 tablespoon x = unsafePerformIO $ (Right `fmap` evaluate x) `catches` handlers
+
+-- | Return a substring
+--
+-- 'subStr' @index@ @length@ returns @length@ characters from the string
+-- starting at @index@, which starts at 0.
+--
+-- > subStr 1 2 "abcd" == "bc"
+subStr :: (S.StringCells s) => Int -> Int -> s -> s
+subStr index length_ = S.take length_ . S.drop index
