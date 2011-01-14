@@ -90,8 +90,8 @@ import Text.Printf
 --
 -- Instances *must* support every serialization format.
 class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
-    type BIndexType bmp  -- ^ Integral type for each coordinate in an index
-    type BPixelType bmp  -- ^ Pixel type of structure
+    type BIndexType bmp  -- @ Integral type for each coordinate in an index
+    type BPixelType bmp  -- @ Pixel type of structure
 
     depth                   :: bmp -> Depth
         -- ^ The color depth of the bitmap in bits
