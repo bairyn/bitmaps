@@ -13,7 +13,7 @@ import Data.Bitmap.Types
 -- Using the functions of the 'Bitmap' class,
 -- default functions are be defined for each of
 -- these; of course, implementations are free
--- to write more efficient versions.
+-- to define more efficient versions.
 class (Bitmap bmp) => BitmapSearchable bmp where
     findPixel ::
         (BPixelType bmp -> Bool)
@@ -34,9 +34,6 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> bmp
      -> Coordinates (BIndexType bmp)
      -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findPixel' that is usually more efficient when exact equality is desired
-                                                --
-                                                -- NB: Pixels are only equal if their types are equal, not just their components.  For component
-                                                -- equivalence, use 'eqPixelValue' and 'findPixel'.
     findPixels ::
         (BPixelType bmp -> Bool)
      -> bmp

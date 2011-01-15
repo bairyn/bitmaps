@@ -1,8 +1,8 @@
 -- | Bitmaps as unboxed arrays of 32-bit RGBA pixels
 --
 -- These bitmaps are generally less efficient than 'BitmapString's, but can be arbitrarily
--- large (if having dimensions larger than 'Int' is really so useful), and have the advantage
--- of being managed in an array.
+-- large (if having dimensions larger than the bound of 'Int' is really so useful), and have the advantages
+-- of being stored in an array.
 
 module Data.Bitmap.Array
     ( BitmapArray

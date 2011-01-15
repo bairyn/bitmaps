@@ -22,8 +22,9 @@ type FBBitmapBase = FB.Bitmap
 -- | The foreign bitmap as defined by the "bitmap" package
 --
 -- For more information see documentation of the "bitmap" package.
--- NB: this type is actually a reference to a memory location, introducing
--- possible issues with concurrency and referential transparency.
+--
+-- NB: this type is actually a reference to a memory location; thus the
+-- possible issues with concurrency and referential transparency are introduced.
 newtype BitmapForeign = BitmapForeign {unwrapBitmapForeign :: FBBitmapBase PixelComponent}
 
 instance Bitmap BitmapForeign where
