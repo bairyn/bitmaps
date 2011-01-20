@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, PolymorphicComponents, TupleSections, FlexibleContexts, ScopedTypeVariables, PatternGuards #-}
+{-# LANGUAGE TypeFamilies, PolymorphicComponents, TupleSections, FlexibleContexts, ScopedTypeVariables #-}
 
 module Data.Bitmap.Class
     ( Bitmap(..)

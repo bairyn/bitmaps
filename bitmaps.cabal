@@ -1,6 +1,6 @@
 name:                  bitmaps
 version:               0.2.0.2
-cabal-version:         >= 1.2
+cabal-version:         >= 1.10
 build-type:            Simple
 license:               BSD3
 license-file:          LICENSE
@@ -15,10 +15,12 @@ category:              Graphics, Data
 tested-with:           GHC == 6.12.3
 
 library
+    default-language:  Haskell2010
     hs-source-dirs:    src
     build-depends:     base >= 4 && < 5, array, containers, binary, monad-state, zlib, bitmap, stb-image, string-class >= 0.1.2.0, bytestring
     exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.Bitmap.Array, Data.Bitmap.Array.Internal, Data.Bitmap.BMP, Data.Bitmap.Class, Data.Bitmap.Foreign, Data.Bitmap.Function, Data.Bitmap.Function.Internal, Data.Bitmap.Pixel, Data.Bitmap.Reflectable, Data.Bitmap.Searchable, Data.Bitmap.StringRGB24A4VR, Data.Bitmap.StringRGB24A4VR.Internal, Data.Bitmap.StringRGB32, Data.Bitmap.StringRGB32.Internal, Data.Bitmap.Types Data.Bitmap.Util
     ghc-options:       -Wall
+    other-extensions:  ScopedTypeVariables, TypeFamilies, GeneralizedNewtypeDeriving, PolymorphicComponents, TupleSections, FlexibleContexts, TemplateHaskell, DeriveDataTypeable, ExistentialQuantification, TypeOperators
 
 source-repository head
     type:              darcs
