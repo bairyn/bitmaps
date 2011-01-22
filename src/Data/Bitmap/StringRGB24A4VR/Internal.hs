@@ -24,6 +24,7 @@ import Data.Bitmap.Types
 import Data.Bitmap.Util
 import Data.Bits
 import qualified Data.ByteString      as B
+import qualified Data.Serialize       as S
 import qualified Data.String.Class    as S
 import Text.Printf
 
@@ -54,6 +55,10 @@ mkLabels [''BitmapStringRGB24A4VR]
 instance Binary BitmapStringRGB24A4VR where
     get   = pure BitmapStringRGB24A4VR <*> get <*> (BitmapImageString <$> (get :: Get B.ByteString))
     put b = put (bmps_dimensions <: b) >> put (case bmps_data <: b of (BitmapImageString s) -> S.toLazyByteString s)
+
+instance S.Serialize BitmapStringRGB24A4VR where
+    get   = pure BitmapStringRGB24A4VR <*> S.get <*> (BitmapImageString <$> (S.get :: S.Get B.ByteString))
+    put b = S.put (bmps_dimensions <: b) >> S.put (case bmps_data <: b of (BitmapImageString s) -> S.toLazyByteString s)
 
 instance Bitmap BitmapStringRGB24A4VR where
     type BIndexType BitmapStringRGB24A4VR = Int

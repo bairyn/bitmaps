@@ -11,10 +11,11 @@ import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
+import Data.Serialize
 
 -- | Arrays of 32-bit RGBA pixels
 newtype BitmapArray = BitmapArray {unwrapBitmapArray :: UArray (Integer, Integer) Word32}
-    deriving (Eq, Ord, Binary)
+    deriving (Eq, Ord, Binary, Serialize)
 
 -- | Instance for debugging purposes
 instance Show BitmapArray where
