@@ -1,5 +1,5 @@
 name:                  bitmaps
-version:               0.2.0.3
+version:               0.2.1.3
 cabal-version:         >= 1.10
 build-type:            Simple
 license:               BSD3
