@@ -6,10 +6,12 @@
 module Data.Bitmap.Util
     ( tablespoon
     , subStr
+    , padByte
     ) where
 
 import Control.Exception
 import qualified Data.String.Class as S
+import Data.Word
 import System.IO.Unsafe (unsafePerformIO)
 
 handlers :: [Handler (Either String a)]
@@ -39,3 +41,6 @@ tablespoon x = unsafePerformIO $ (Right `fmap` evaluate x) `catches` handlers
 -- > subStr 1 2 "abcd" == "bc"
 subStr :: (S.StringCells s) => Int -> Int -> s -> s
 subStr index length_ = S.take length_ . S.drop index
+
+padByte :: Word8
+padByte = 0x00

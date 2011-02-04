@@ -17,7 +17,7 @@ import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
-import Data.Bitmap.Util
+import Data.Bitmap.Util hiding (padByte)
 import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.Serialize       as S

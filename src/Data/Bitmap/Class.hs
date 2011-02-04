@@ -101,6 +101,8 @@ class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
 
     getPixel                :: bmp -> Coordinates (BIndexType bmp) -> BPixelType bmp
         -- ^ Get a pixel; indexing starts at 0
+        --
+        -- Implementations can assume that the coordinates are within the bounds of the bitmap.
 
     constructPixels         :: (Coordinates (BIndexType bmp) -> BPixelType bmp) -> Dimensions (BIndexType bmp) -> bmp
         -- ^ Construct a bitmap with a function that returns a pixel for each coordinate with the given dimensions
@@ -110,6 +112,40 @@ class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
         -- Implementations are not required to call the function in any particular order, and are not even
         -- required to guarantee that the function will be called for each pixel, which might be true for
         -- a bitmap that is evaluated lazily as needed.
+
+    convertInternalFormat   :: bmp -> bmp -> bmp
+        -- ^ Construct a new bitmap from the bitmap passed as the second argument but storing it in the bitmap of the meta-bitmap passed as the first argument
+        --
+        -- The purpose of this function is efficiency.  Some bitmap types have multiple possible internal representations of bitmaps.
+        -- For these bitmap types, it is often more efficient when performing operations on multiple bitmaps for them be stored in the
+        -- same format.  Instances might even always convert the bitmaps if their formats differ.
+        --
+        -- Implementations are not required to define this function
+        -- to store the second bitmap in another format, or even in the same
+        -- format as the first bitmap; this is only used for efficiency.  They
+        -- should, however, return a bitmap that represents the same bitmap as
+        -- what the main bitmap (passed as the second argument) represents.
+        -- The default behaviour of this function is to return the main bitmap
+        -- (passed second) verbatim.
+        --
+        -- As an example application of this function, consider a program that
+        -- regularly captures the screen and searches for any of several
+        -- bitmaps which are read from the filesystem.  The programmer
+        -- chooses the type that is most efficient for the format that
+        -- the screen capture is in, and uses it as the main type.
+        -- As the screen is expected to change, it would be inefficient
+        -- to convert each capture into another internal format each time,
+        -- especially since screen dumps can be very large.  The bitmaps, however,
+        -- are generally static (and much smaller), so they could be converted
+        -- once using this function, 'convertInternalFormat', to the format that
+        -- screen captures are represented in, and reused.  If the formats would
+        -- otherwise differ, this is much more efficient than converting the format
+        -- of every sub-bitmap every time a search or operation is needed.
+        --
+        -- NB: again, the format of the first argument is used along with
+        -- the image of the second argument to return (possibly) a bitmap
+        -- with the image of the second argument and with the format of the
+        -- first argument.
 
     completeEncoders :: [(CompleteBitmapFormat, CompleteEncoder bmp)]
         -- ^ Bitmap encoders; default definition is based on 'defaultCompleteEncoders'
@@ -124,6 +160,8 @@ class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
         -- ^ Bitmap encoders; the meta-information is lost; default definition is based on 'defaultImageEncoders'
     imageDecoders    :: [(ImageBitmapFormat,    ImageDecoder    bmp)]
         -- ^ Decode the bitmap; the meta-information from the given bitmap is used (see 'ImageDecoder'); default definition is based on 'defaultImageDecoders'
+
+    convertInternalFormat = const
 
     completeEncoders = map (second unwrapGenericBitmapSerializer) defaultCompleteEncoders
     completeDecoders = map (second unwrapGenericBitmapSerializer) defaultCompleteDecoders
@@ -752,6 +790,3 @@ decodeImageDimensions dms = decodeImage (constructPixels (const leastIntensity) 
 -- | Decode an image with the given dimensions as 'decodeImageDimensions' does it, but in a specific format
 decodeImageDimensionsFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
 decodeImageDimensionsFmt fmt dms = decodeImageFmt fmt (constructPixels (const leastIntensity) dms)
-
-padByte :: Word8
-padByte = 0x00

@@ -6,8 +6,7 @@ module Data.Bitmap.BMP
     , module Data.Bitmap.Pixel
     , module Data.Bitmap.Reflectable
     , module Data.Bitmap.Searchable
-    , module Data.Bitmap.StringRGB24A4VR
-    , module Data.Bitmap.StringRGB32
+    , module Data.Bitmap.String
     , module Data.Bitmap.Types
     ) where
 
@@ -18,6 +17,5 @@ import Data.Bitmap.Function
 import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
-import Data.Bitmap.StringRGB24A4VR
-import Data.Bitmap.StringRGB32
+import Data.Bitmap.String
 import Data.Bitmap.Types

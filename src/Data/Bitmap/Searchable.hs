@@ -33,9 +33,14 @@ class (Bitmap bmp) => BitmapSearchable bmp where
         BPixelType bmp
      -> bmp
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findPixel' that is usually more efficient when exact equality is desired
+     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findPixelEqual' that is usually more efficient when exact equality is desired
     findPixels ::
         (BPixelType bmp -> Bool)
+     -> bmp
+     -> Coordinates (BIndexType bmp)
+     -> [Coordinates (BIndexType bmp)]
+    findPixelsEqual ::
+        BPixelType bmp
      -> bmp
      -> Coordinates (BIndexType bmp)
      -> [Coordinates (BIndexType bmp)]
@@ -68,10 +73,15 @@ class (Bitmap bmp) => BitmapSearchable bmp where
         bmp  -- Super bitmap
      -> bmp  -- Sub bitmap
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findSubBitmap' that is usually more efficient when exact equality is desired
+     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findSubBitmapEqual' that is usually more efficient when exact equality is desired
     findSubBitmaps ::
         (BPixelType bmp -> BPixelType bmp -> Bool)
      -> bmp  -- Super bitmap
+     -> bmp  -- Sub bitmap
+     -> Coordinates (BIndexType bmp)
+     -> [(Coordinates (BIndexType bmp))]
+    findSubBitmapsEqual ::
+        bmp  -- Super bitmap
      -> bmp  -- Sub bitmap
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
@@ -107,6 +117,22 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                       (Just i'@(row, column)) ->
                           if row < maxRow || column < maxColumn
                               then i' : findPixels f b (nextCoordinate i')
+                              else i' : []
+                      (Nothing)               ->
+                          []
+
+    findPixelsEqual p b = r'
+        where (width, height) = dimensions b
+              maxColumn = abs . pred $ width
+              maxRow    = abs . pred $ height
+              nextCoordinate (row, column)
+                  | column >= maxColumn = (succ row, 0)
+                  | otherwise           = (row, succ column)
+              r' i      =
+                  case findPixelEqual p b i of
+                      (Just i'@(row, column)) ->
+                          if row < maxRow || column < maxColumn
+                              then i' : findPixelsEqual p b (nextCoordinate i')
                               else i' : []
                       (Nothing)               ->
                           []
@@ -152,6 +178,22 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                       (Just i'@(row, column)) ->
                           if row < maxRow || column < maxColumn
                               then i' : findSubBitmaps f super sub (nextCoordinate i')
+                              else i' : []
+                      (Nothing)               ->
+                          []
+
+    findSubBitmapsEqual super sub = r'
+        where (widthSuper, heightSuper) = dimensions super
+              (widthSub,   heightSub)   = dimensions sub
+              (maxRow,     maxColumn)   = (heightSuper - heightSub, widthSuper - widthSub)
+              nextCoordinate (row, column)
+                  | column >= maxColumn = (succ row, 0)
+                  | otherwise           = (row, succ column)
+              r' i =
+                  case findSubBitmapEqual super sub i of
+                      (Just i'@(row, column)) ->
+                          if row < maxRow || column < maxColumn
+                              then i' : findSubBitmapsEqual super sub (nextCoordinate i')
                               else i' : []
                       (Nothing)               ->
                           []
