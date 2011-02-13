@@ -51,6 +51,9 @@ module Data.Bitmap.Class
     , decodeImageFmt
     , decodeImageDimensions
     , decodeImageDimensionsFmt
+
+    -- * Utility functions
+    , dimensionsFit
     ) where
 
 import Codec.Compression.Zlib
@@ -790,3 +793,13 @@ decodeImageDimensions dms = decodeImage (constructPixels (const leastIntensity) 
 -- | Decode an image with the given dimensions as 'decodeImageDimensions' does it, but in a specific format
 decodeImageDimensionsFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
 decodeImageDimensionsFmt fmt dms = decodeImageFmt fmt (constructPixels (const leastIntensity) dms)
+
+-- | Determine whether the seconds dimensions passed can fit within the first dimensions passed
+--
+-- If the width or height of the second dimensions exceeds those of first
+-- dimensions, 'False' is returned.
+dimensionsFit :: (Integral a) => Dimensions a -> Dimensions a -> Bool
+dimensionsFit (widthSuper, heightSuper) (widthSub, heightSub)
+    | widthSub  > widthSuper  = False
+    | heightSub > heightSuper = False
+    | otherwise               = True

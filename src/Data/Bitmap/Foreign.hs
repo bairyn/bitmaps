@@ -1,5 +1,7 @@
 {-# LANGUAGE TypeFamilies, ScopedTypeVariables #-}
 
+-- | Wrapping interface for bitmaps as defined by the 'bitmap' package
+
 module Data.Bitmap.Foreign
     ( FBBitmapBase
     , BitmapForeign(..)

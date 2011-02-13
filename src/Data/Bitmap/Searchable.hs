@@ -7,6 +7,7 @@ import Control.Monad.Record
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
 import Data.Bitmap.Types
+import Data.List (nub)
 
 -- | Class for searchable bitmaps
 --
@@ -85,6 +86,44 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> bmp  -- Sub bitmap
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
+    findEmbeddedBitmap ::
+     (Integral i)
+     => [bmp]
+     -> bmp  -- Super bitmap
+     -> Coordinates (BIndexType bmp)  -- Coordinates relative to super bitmap
+     -> Maybe i  -- ^ Find the first bitmap from the list that matches with
+                 -- the area of the same size from the given coordinate in
+                 -- the "super" bitmap (passed as the second argument)
+                 -- down-right (the coordinate is the first pixel which is
+                 -- the top-left most of the area to check)
+                 --
+                 -- The "sub" bitmaps are tested in order until a match is
+                 -- found, and if one is, its index in the list is
+                 -- returned.  Each pixel in every "sub" bitmap is specially
+                 -- colored to represent a particular function.  These
+                 -- colors are recognized:
+                 --
+                 -- - black / greatest intensity: the corresponding pixel in
+                 -- the "super" bitmap based on position can be any color.
+                 -- - white / least intensity: the corresponding pixel in the
+                 -- super bitmap must be the same color as every other pixel
+                 -- in the super bitmap that also corresponds to a white pixel.
+                 -- - red / FF0000 / completely red: if there are white
+                 -- pixels in the sub bitmap, the corresponding pixel of the
+                 -- red pixel should be different from the color that
+                 -- corresponds to the white pixels.
+                 --
+                 -- The behaviour when any other pixel is encountered is
+                 -- undefined.
+                 --
+                 -- When the dimensions of a sub bitmap are too large for the
+                 -- super bitmap offset by the coordinates, where otherwise
+                 -- some pixels of the sub bitmap would not have any
+                 -- corresponding pixels in the super bitmap; then the sub
+                 -- bitmap simply does not match.
+                 --
+                 -- This function makes OCR with a known and static font
+                 -- more convenient to implement.
 
     findPixel f b = findPixelOrder f b (0, 0)
 
@@ -197,6 +236,58 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                               else i' : []
                       (Nothing)               ->
                           []
+
+    findEmbeddedBitmap allEmbs super (row, column) = r' 0 allEmbs
+        where pixAny  = leastIntensity
+              pixSame = greatestIntensity
+              pixDif  = (red   =: 0xFF)
+                      . (green =: 0x00)
+                      . (blue  =: 0x00)
+                      $ leastIntensity
+              dimensionsSuper = dimensions super
+              r' _ []     = Nothing
+              r' n (e:es)
+                  | True <- dimensionsFit dimensionsSuper (widthSub + column, heightSub + row)
+                  , True <- matches Nothing [] (0, 0)
+                      = Just n
+                  | otherwise
+                      = r' (succ n) es
+                  -- difColors is necessary because red pixels could be encountered first, so we keep track of every color of every red pixel until we encounter a white pixel, and then we can empty the list after we check whether the first color is part of the list; for efficiency we always eliminate duplicates
+                  where matches matchColor difColors offi@(offRow, offColumn)
+                            | offColumn > maxOffColumn
+                                = matches matchColor difColors (succ offRow, 0)
+                            | offRow    > maxOffRow
+                                = True
+                            | (False, _, _)                    <- posCondition
+                                = False
+                            | (_,     matchColor', difColors') <- posCondition
+                                = matches matchColor' difColors' (offRow, succ offColumn)
+                            where posCondition
+                                      | subPixel == pixAny
+                                          -- Any pixel (black in sub)
+                                          = (True, matchColor, difColors)
+                                      | True               <- subPixel == pixSame
+                                      , (Just matchColor') <- matchColor
+                                          -- Match pixel (white in sub); matching color already set
+                                          = (superPixel == matchColor', matchColor, difColors)  -- difColors should already be empty
+                                      | True               <- subPixel == pixSame
+                                          -- First match pixel (white in sub); record matching color
+                                          = (not $ superPixel `elem` difColors, Just superPixel, [])
+                                      | True               <- subPixel == pixDif
+                                      , (Just matchColor') <- matchColor
+                                          -- Dif pixel (completely red in sub); matching color found
+                                          = (superPixel /= matchColor', matchColor, difColors)  -- difColors should already be empty
+                                      | True               <- subPixel == pixDif
+                                          -- Dif pixel (completely red in sub); matching color not yet found
+                                          = (True, matchColor, nub $ superPixel : difColors)
+                                      | otherwise
+                                          -- undefined pixel in sub bitmap
+                                          = (False, matchColor, difColors)
+                                      where superPixel = getPixel super (row + offRow, column + offColumn)
+                                            subPixel   = getPixel e     offi
+
+                        (widthSub,   heightSub)    = dimensions e
+                        (maxOffRow,  maxOffColumn) = (abs . pred $ heightSub, abs . pred $ widthSub)
 
 -- | Default transparent pixel value; FF007E
 defaultTransparentPixel :: (Pixel p) => p

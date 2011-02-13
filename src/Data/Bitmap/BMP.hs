@@ -1,3 +1,10 @@
+-- | Super module of bitmaps
+--
+-- For functions that expect two bitmaps or otherwise two parameters based on
+-- two bitmaps (such as dimensions) to be passed, this library's convention
+-- is to accept the "super" bitmap or the larger / main bitmap first and the
+-- "sub" bitmap second.
+
 module Data.Bitmap.BMP
     ( module Data.Bitmap.Array
     , module Data.Bitmap.Class
