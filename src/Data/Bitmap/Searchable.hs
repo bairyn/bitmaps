@@ -88,14 +88,19 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> [(Coordinates (BIndexType bmp))]
     findEmbeddedBitmap ::
      (Integral i)
-     => [bmp]
+     => (i -> bmp -> a)
+     -> [bmp]
      -> bmp  -- Super bitmap
      -> Coordinates (BIndexType bmp)  -- Coordinates relative to super bitmap
-     -> Maybe i  -- ^ Find the first bitmap from the list that matches with
+     -> Maybe a  -- ^ Find the first bitmap from the list that matches with
                  -- the area of the same size from the given coordinate in
                  -- the "super" bitmap (passed as the second argument)
                  -- down-right (the coordinate is the first pixel which is
-                 -- the top-left most of the area to check)
+                 -- the top-left most of the area to check).  The match
+                 -- sub-bitmap and its index in the list are passed in
+                 -- the opposite order given in this description to the
+                 -- function, and the result is returned; if one is found.
+                 -- If no match is found, 'Nothing' is returned.
                  --
                  -- The "sub" bitmaps are tested in order until a match is
                  -- found, and if one is, its index in the list is
@@ -237,7 +242,7 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                       (Nothing)               ->
                           []
 
-    findEmbeddedBitmap allEmbs super (row, column) = r' 0 allEmbs
+    findEmbeddedBitmap f allEmbs super (row, column) = r' 0 allEmbs
         where pixAny  = leastIntensity
               pixSame = greatestIntensity
               pixDif  = (red   =: 0xFF)
@@ -249,7 +254,7 @@ class (Bitmap bmp) => BitmapSearchable bmp where
               r' n (e:es)
                   | True <- dimensionsFit dimensionsSuper (widthSub + column, heightSub + row)
                   , True <- matches Nothing [] (0, 0)
-                      = Just n
+                      = Just $ f n e
                   | otherwise
                       = r' (succ n) es
                   -- difColors is necessary because red pixels could be encountered first, so we keep track of every color of every red pixel until we encounter a white pixel, and then we can empty the list after we check whether the first color is part of the list; for efficiency we always eliminate duplicates
