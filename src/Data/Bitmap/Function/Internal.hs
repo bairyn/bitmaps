@@ -7,8 +7,6 @@ module Data.Bitmap.Function.Internal
 import Control.Monad.Record
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
-import Data.Bitmap.Reflectable
-import Data.Bitmap.Searchable
 import Data.Bitmap.Types
 
 data BitmapFunction = BitmapFunction
@@ -29,6 +27,3 @@ instance Bitmap BitmapFunction where
     getPixel        = (bmpf_getPixel   <:)
 
     constructPixels = flip BitmapFunction
-
-instance BitmapSearchable  BitmapFunction
-instance BitmapReflectable BitmapFunction

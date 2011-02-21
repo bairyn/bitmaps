@@ -1,6 +1,14 @@
+{-# LANGUAGE FlexibleInstances, OverlappingInstances, UndecidableInstances #-}
+
 module Data.Bitmap.Searchable
     ( BitmapSearchable(..)
+    , areColorsSimilar
+    , colorDifferenceCIE94
     , defaultTransparentPixel
+    , matchPixelAny
+    , matchPixelSame
+    , matchPixelDif
+    , matchPixelDifThreshold
     ) where
 
 import Control.Monad.Record
@@ -87,12 +95,12 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
     findEmbeddedBitmap ::
-     (Integral i)
-     => (i -> bmp -> a)
-     -> [bmp]
+     (Integral i, Bitmap bmp)
+     => [bmp]
      -> bmp  -- Super bitmap
      -> Coordinates (BIndexType bmp)  -- Coordinates relative to super bitmap
-     -> Maybe a  -- ^ Find the first bitmap from the list that matches with
+     -> Maybe (i, bmp)
+                 -- ^ Find the first bitmap from the list that matches with
                  -- the area of the same size from the given coordinate in
                  -- the "super" bitmap (passed as the second argument)
                  -- down-right (the coordinate is the first pixel which is
@@ -117,6 +125,12 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                  -- pixels in the sub bitmap, the corresponding pixel of the
                  -- red pixel should be different from the color that
                  -- corresponds to the white pixels.
+                 -- - green / 00FF00 / complete green: if there are white pixels
+                 -- in the sub bitmap, the corresponding pixel of the
+                 -- green pixel should not be similar from the color
+                 -- that corresponds to the white pixels.  See
+                 -- 'areColorsSimilar' to see whether two colors are
+                 -- considered to be "similar".
                  --
                  -- The behaviour when any other pixel is encountered is
                  -- undefined.
@@ -129,6 +143,17 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                  --
                  -- This function makes OCR with a known and static font
                  -- more convenient to implement.
+
+    findEmbeddedBitmapString ::
+     (Integral i, Bitmap bmp)
+     => ((i, bmp) -> a -> a)
+     -> a
+     -> [bmp]
+     -> bmp
+     -> Coordinates (BIndexType bmp)
+     -> a -- 'foldr' equivalent of 'findEmbeddedBitmap' for a horizontal string of embedded bitmaps
+          --
+          -- This is particularly convenient for OCR with a static and known font with multiple characters.
 
     findPixel f b = findPixelOrder f b (0, 0)
 
@@ -242,57 +267,144 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                       (Nothing)               ->
                           []
 
-    findEmbeddedBitmap f allEmbs super (row, column) = r' 0 allEmbs
-        where pixAny  = leastIntensity
-              pixSame = greatestIntensity
-              pixDif  = (red   =: 0xFF)
-                      . (green =: 0x00)
-                      . (blue  =: 0x00)
-                      $ leastIntensity
+    findEmbeddedBitmap allEmbs super (row, column) = r' 0 allEmbs
+        where pixAny  = matchPixelAny
+              pixSame = matchPixelSame
+              pixDif  = matchPixelDif
+              pixDft  = matchPixelDifThreshold
               dimensionsSuper = dimensions super
               r' _ []     = Nothing
               r' n (e:es)
                   | True <- dimensionsFit dimensionsSuper (widthSub + column, heightSub + row)
-                  , True <- matches Nothing [] (0, 0)
-                      = Just $ f n e
+                  , True <- matches Nothing [] [] (0, 0)
+                      = Just $ (n, e)
                   | otherwise
                       = r' (succ n) es
                   -- difColors is necessary because red pixels could be encountered first, so we keep track of every color of every red pixel until we encounter a white pixel, and then we can empty the list after we check whether the first color is part of the list; for efficiency we always eliminate duplicates
-                  where matches matchColor difColors offi@(offRow, offColumn)
+                  where matches matchColor difColors dftColors offi@(offRow, offColumn)
                             | offColumn > maxOffColumn
-                                = matches matchColor difColors (succ offRow, 0)
+                                = matches matchColor difColors dftColors (succ offRow, 0)
                             | offRow    > maxOffRow
                                 = True
-                            | (False, _, _)                    <- posCondition
+                            | (False, _,           _,          _)          <- posCondition
                                 = False
-                            | (_,     matchColor', difColors') <- posCondition
-                                = matches matchColor' difColors' (offRow, succ offColumn)
+                            | (_,     matchColor', difColors', dftColors') <- posCondition
+                                = matches matchColor' difColors' dftColors' (offRow, succ offColumn)
                             where posCondition
                                       | subPixel == pixAny
                                           -- Any pixel (black in sub)
-                                          = (True, matchColor, difColors)
+                                          = (True, matchColor, difColors, dftColors)
                                       | True               <- subPixel == pixSame
                                       , (Just matchColor') <- matchColor
                                           -- Match pixel (white in sub); matching color already set
-                                          = (superPixel == matchColor', matchColor, difColors)  -- difColors should already be empty
+                                          = (superPixel == matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
                                       | True               <- subPixel == pixSame
                                           -- First match pixel (white in sub); record matching color
-                                          = (not $ superPixel `elem` difColors, Just superPixel, [])
+                                          = ((not $ superPixel `elem` difColors) && (not $ any (`areColorsSimilar` superPixel) dftColors), Just superPixel, [], [])
                                       | True               <- subPixel == pixDif
                                       , (Just matchColor') <- matchColor
                                           -- Dif pixel (completely red in sub); matching color found
-                                          = (superPixel /= matchColor', matchColor, difColors)  -- difColors should already be empty
+                                          = (superPixel /= matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
                                       | True               <- subPixel == pixDif
                                           -- Dif pixel (completely red in sub); matching color not yet found
-                                          = (True, matchColor, nub $ superPixel : difColors)
+                                          = (True, matchColor, nub $ superPixel : difColors, dftColors)
+                                      | True               <- subPixel == pixDft
+                                      , (Just matchColor') <- matchColor
+                                          -- Dft pixel (completely green in sub); matching color found
+                                          = (not $ superPixel `areColorsSimilar` matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
+                                      | True               <- subPixel == pixDft
+                                          -- Dft pixel (completely green in sub); matching color not yet found
+                                          = (True, matchColor, difColors, nub $ superPixel : dftColors)
                                       | otherwise
                                           -- undefined pixel in sub bitmap
-                                          = (False, matchColor, difColors)
+                                          = (False, matchColor, difColors, dftColors)
                                       where superPixel = getPixel super (row + offRow, column + offColumn)
                                             subPixel   = getPixel e     offi
 
                         (widthSub,   heightSub)    = dimensions e
                         (maxOffRow,  maxOffColumn) = (abs . pred $ heightSub, abs . pred $ widthSub)
+
+    findEmbeddedBitmapString f z allEmbs super = go
+        where go pos@(row, column) =
+                  case findEmbeddedBitmap allEmbs super pos of
+                      (Nothing)         -> z
+                      (Just r@(_, bmp)) -> r `f` go (row, column + (max 1 $ bitmapWidth bmp))
+
+instance (Bitmap a) => BitmapSearchable a
+
+-- | Binary similarity comparison
+--
+-- This function considers two colors to be "similar" if their difference
+-- according to the CIE94 algorithm (see 'colorDifferenceCIE94') is less than
+-- 23.
+areColorsSimilar :: (Pixel p) => p -> p -> Bool
+areColorsSimilar a b =
+    let d :: Double
+        d = colorDifferenceCIE94 a b
+    in  d <= 23
+
+-- | Approximate difference in color according to the CIE94 algorithm
+colorDifferenceCIE94 :: (Pixel p, RealFloat n, Ord n) => p -> p -> n
+colorDifferenceCIE94 pa pb =
+    let sq x = x * x
+
+        rgb_ra = (fromIntegral $ red   <: pa) / 255.0
+        rgb_rb = (fromIntegral $ red   <: pb) / 255.0
+        rgb_ga = (fromIntegral $ green <: pa) / 255.0
+        rgb_gb = (fromIntegral $ green <: pb) / 255.0
+        rgb_ba = (fromIntegral $ blue  <: pa) / 255.0
+        rgb_bb = (fromIntegral $ blue  <: pb) / 255.0
+
+        f x
+            | x > 0.04045 = 100 * ((x + 0.055) / 1.055) ** 2.4
+            | otherwise   = 100 * x / 12.92
+
+        rgb_ra' = f rgb_ra
+        rgb_rb' = f rgb_rb
+        rgb_ga' = f rgb_ga
+        rgb_gb' = f rgb_gb
+        rgb_ba' = f rgb_ba
+        rgb_bb' = f rgb_bb
+
+        xa = 0.4124 * rgb_ra' + 0.3576 * rgb_ga' + 0.1805 * rgb_ba'
+        xb = 0.4124 * rgb_rb' + 0.3576 * rgb_gb' + 0.1805 * rgb_bb'
+        ya = 0.2126 * rgb_ra' + 0.7152 * rgb_ga' + 0.0722 * rgb_ba'
+        yb = 0.2126 * rgb_rb' + 0.7152 * rgb_gb' + 0.0722 * rgb_bb'
+        za = 0.0193 * rgb_ra' + 0.1192 * rgb_ga' + 0.9505 * rgb_ba'
+        zb = 0.0193 * rgb_rb' + 0.1192 * rgb_gb' + 0.9505 * rgb_bb'
+
+
+        g x
+            | x > 0.008856 = x ** (1/3)
+            | otherwise    = 7.787 * x + 16 / 116
+
+        xa' = g $ xa / 95.047
+        xb' = g $ xb / 95.047
+        ya' = g $ ya / 100
+        yb' = g $ yb / 100
+        za' = g $ za / 108.883
+        zb' = g $ zb / 108.883
+
+        la = (116 * ya') - 16
+        lb = (116 * yb') - 16
+        aa = 500 * (xa' - ya')
+        ab = 500 * (xb' - yb')
+        ba = 200 * (ya' - za')
+        bb = 200 * (yb' - zb')
+
+        kl = 1
+        k1 = 0.045
+        k2 = 0.015
+
+        h r
+            | r >= 0 = r
+            | otherwise = 2 * pi - (min 0 $ abs r)
+
+        ca = sqrt (sq aa + sq ba)
+        cb = sqrt (sq ab + sq bb)
+        ha = h $ atan2 ba aa
+        hb = h $ atan2 bb ab
+    in  sqrt $ (sq $ (lb - la) / kl) + (sq $ (cb - ca) / (1 + k1 * ca)) + (sq $ (ha - hb) / (1 + k2 * ca))
 
 -- | Default transparent pixel value; FF007E
 defaultTransparentPixel :: (Pixel p) => p
@@ -301,3 +413,23 @@ defaultTransparentPixel =
   . (green =: 0x00)
   . (blue  =: 0x7E)
   $ leastIntensity
+
+matchPixelAny :: (Pixel p) => p
+matchPixelAny = leastIntensity
+
+matchPixelSame :: (Pixel p) => p
+matchPixelSame = greatestIntensity
+
+matchPixelDif :: (Pixel p) => p
+matchPixelDif =
+      (red   =: 0xFF)
+    . (green =: 0x00)
+    . (blue  =: 0x00)
+    $ leastIntensity
+
+matchPixelDifThreshold :: (Pixel p) => p
+matchPixelDifThreshold =
+      (red   =: 0x00)
+    . (green =: 0xFF)
+    . (blue  =: 0x00)
+    $ leastIntensity

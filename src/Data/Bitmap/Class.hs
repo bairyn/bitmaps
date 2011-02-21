@@ -17,16 +17,21 @@ module Data.Bitmap.Class
     , encodeCBF_BMPIUZ64
     , encodeCBF_BMPIU64
     , encodeCBF_BMPIU
+    , encodeCBF_BMPIUU
     , defaultCompleteDecoders
     , tryCBF_BMPIUZ64
     , tryCBF_BMPIU64
     , tryCBF_BMPIU
+    , tryCBF_BMPIUU
     , defaultImageEncoders
     , encodeIBF_IDRGB24Z64
     , encodeIBF_IDBGR24R2RZ64
     , encodeIBF_IDBGR24HZH
+    , encodeIBF_IDRGB32Z64
     , encodeIBF_BGR24H
     , encodeIBF_BGR24A4VR
+    , encodeIBF_BGRU32VR
+    , encodeIBF_BGRU32
     , encodeIBF_RGB24A4VR
     , encodeIBF_RGB24A4
     , encodeIBF_RGB32
@@ -35,8 +40,11 @@ module Data.Bitmap.Class
     , tryIBF_IDRGB24Z64
     , tryIBF_IDBGR24R2RZ64
     , tryIBF_IDBGR24HZH
+    , tryIBF_IDRGB32Z64
     , tryIBF_BGR24H
     , tryIBF_BGR24A4VR
+    , tryIBF_BGRU32VR
+    , tryIBF_BGRU32
     , tryIBF_RGB24A4VR
     , tryIBF_RGB24A4
     , tryIBF_RGB32
@@ -54,6 +62,8 @@ module Data.Bitmap.Class
 
     -- * Utility functions
     , dimensionsFit
+    , bitmapWidth
+    , bitmapHeight
     ) where
 
 import Codec.Compression.Zlib
@@ -105,7 +115,9 @@ class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
     getPixel                :: bmp -> Coordinates (BIndexType bmp) -> BPixelType bmp
         -- ^ Get a pixel; indexing starts at 0
         --
-        -- Implementations can assume that the coordinates are within the bounds of the bitmap.
+        -- Implementations can assume that the coordinates are within the
+        -- bounds of the bitmap.  Thus callers of this function should always
+        -- ensure that the coordinates are within the bounds of the bitmap.
 
     constructPixels         :: (Coordinates (BIndexType bmp) -> BPixelType bmp) -> Dimensions (BIndexType bmp) -> bmp
         -- ^ Construct a bitmap with a function that returns a pixel for each coordinate with the given dimensions
@@ -194,6 +206,7 @@ defaultCompleteEncoders =
     [ (CBF_BMPIUZ64, GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIUZ64)
     , (CBF_BMPIU64,  GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU64)
     , (CBF_BMPIU,    GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIU)
+    , (CBF_BMPIUU,   GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIUU)
     ]
 
 encodeCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => bmp -> s
@@ -243,6 +256,50 @@ encodeCBF_BMPIU b =
                       n -> n
     in  header `S.append` image
 
+encodeCBF_BMPIUU :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIUU b =
+    let (width, height) = dimensions b
+        header = S.fromLazyByteString . runPut $ do
+            -- Magic sequence
+            putWord8 (0x42 :: Word8)
+            putWord8 (0x4D :: Word8)
+
+            -- File size
+            putWord32le (fromIntegral $ 4 * width * height + 0x0E + 40  :: Word32)
+
+            -- Reserved
+            putWord16le 0x0000
+            putWord16le 0x0000
+
+            -- Offset
+            putWord32le (0x0E + 40 :: Word32)
+
+            -- Bitmap information header; BITMAPINFOHEADER
+            -- header size
+            putWord32le (40 :: Word32)
+            -- width
+            putWord32le (fromIntegral width  :: Word32)
+            -- height
+            putWord32le (fromIntegral height  :: Word32)
+            -- number of color planes
+            putWord16le (1 :: Word16)
+            -- bits per pixel / depth
+            putWord16le (32 :: Word16)
+            -- compression
+            putWord32le (0 :: Word32)  -- no compression
+            -- image size
+            putWord32le (fromIntegral $ 4 * width * height  :: Word32)
+            -- horizontal resolution; pixel per meter
+            putWord32le (3000 :: Word32)
+            -- vertical resolution; pixel per meter
+            putWord32le (3000 :: Word32)
+            -- number of colors
+            putWord32le (0 :: Word32)
+            -- number of important colors
+            putWord32le (0 :: Word32)
+        image   = encodeImageFmt IBF_BGRU32VR b
+    in  header `S.append` image
+
 encodeCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIU64 = encode64 . encodeCompleteFmt CBF_BMPIU
 
@@ -254,6 +311,7 @@ defaultCompleteDecoders =
     [ (CBF_BMPIUZ64, GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIUZ64)
     , (CBF_BMPIU64,  GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU64)
     , (CBF_BMPIU,    GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIU)
+    , (CBF_BMPIUU,   GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIUU)
     ]
 
 tryCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
@@ -288,10 +346,10 @@ tryCBF_BMPIU s = do
                 fail $ printf "numColorPlanes with value '%d' which is other than 1 is not supported" numColorPlanes
             bitsPerPixel <- getWord16le
             when (bitsPerPixel /= 24) $ do
-                fail $ printf "bitsPerPixel with value '%d' which is other than 1 is not supported" bitsPerPixel
+                fail $ printf "bitsPerPixel with value '%d' which is other than 24 is not supported" bitsPerPixel
             compression <- getWord32le
             when (compression /= 0) $ do
-                fail $ printf "compression with value '%d' which is other than 1 is not supported; needs to be uncompressed RGB" compression
+                fail $ printf "compression with value '%d' which is other than 0 is not supported; needs to be uncompressed RGB" compression
             imageSize <- getWord32le
             let shouldBeImageSize = (3 * width + padding) * height
                 padding = case (3 * width) `mod` 4 of
@@ -315,6 +373,62 @@ tryCBF_BMPIU s = do
     let metaBitmap = constructPixels (const leastIntensity) (fromIntegral width, fromIntegral height)
     decodeImageFmt IBF_BGR24A4VR metaBitmap $ imgData
 
+tryCBF_BMPIUU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIUU s = do
+    let getImgInfo = do
+            m0 <- getWord8
+            m1 <- getWord8
+
+            when (m0 /= 0x42 || m1 /= 0x4D) $ do
+                fail "magic sequence is not that of BMP format"
+
+            -- skip filesize 4, reserved 2, reserved, 2
+            skip 8
+
+            offset <- getWord32le
+
+            -- get offset to image data
+            let offset' = offset - 0x0E - 40
+
+            when (offset' < 0) $ do
+                fail $ printf "rewinding to image data at offset %d not supported" offset
+
+            -- read DIB header
+            headerSize <- getWord32le
+            when (headerSize /= 40) $ do
+                fail $ printf "header with size '%d' which is other than 40 is not supported" headerSize
+
+            width  <- getWord32le
+            height <- getWord32le
+            numColorPlanes <- getWord16le
+            when (numColorPlanes /= 1) $ do
+                fail $ printf "numColorPlanes with value '%d' which is other than 1 is not supported" numColorPlanes
+            bitsPerPixel <- getWord16le
+            when (bitsPerPixel /= 32) $ do
+                fail $ printf "bitsPerPixel with value '%d' which is other than 32 is not supported" bitsPerPixel
+            compression <- getWord32le
+            when (compression /= 0) $ do
+                fail $ printf "compression with value '%d' which is other than 0 is not supported; needs to be uncompressed RGB" compression
+            imageSize <- getWord32le
+            let shouldBeImageSize = 4 * width * height
+            when (imageSize /= shouldBeImageSize) $ do
+                fail $ printf "imageSize was read to be '%d', but it should be '%d' since the dimensions of the bitmap are (%d, %d)" imageSize shouldBeImageSize width height
+            -- skip horRes 4, verRes 4, usedColors 4, importantColors 4
+            skip 16
+
+            -- skip to image data
+            when (offset' > 0) $ do
+                skip $ fromIntegral offset'
+
+            -- get image data
+            imgData <- getLazyByteString (fromIntegral imageSize)
+
+            return (width, height, imgData)
+
+    (width, height, imgData) <- tablespoon . flip runGet (S.toLazyByteString s) $ getImgInfo
+    let metaBitmap = constructPixels (const leastIntensity) (fromIntegral width, fromIntegral height)
+    decodeImageFmt IBF_BGRU32VR metaBitmap $ imgData
+
 tryCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIU64 s = decodeCompleteFmt CBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
@@ -323,11 +437,14 @@ tryCBF_BMPIUZ64 s = decodeCompleteFmt CBF_BMPIU =<< tablespoon . decompress . S.
 
 defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
 defaultImageEncoders =
-    [ (IBF_IDRGB24Z64,    GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDRGB24Z64)
+    [ (IBF_IDRGB32Z64,    GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDRGB32Z64)
+    , (IBF_IDRGB24Z64,    GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDRGB24Z64)
     , (IBF_IDBGR24R2RZ64, GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDBGR24R2RZ64)
     , (IBF_IDBGR24HZH,    GenericBitmapSerializer $ ImageEncoder $ encodeIBF_IDBGR24HZH)
     , (IBF_BGR24H,        GenericBitmapSerializer $ ImageEncoder $ encodeIBF_BGR24H)
     , (IBF_BGR24A4VR,     GenericBitmapSerializer $ ImageEncoder $ encodeIBF_BGR24A4VR)
+    , (IBF_BGRU32VR,      GenericBitmapSerializer $ ImageEncoder $ encodeIBF_BGRU32VR)
+    , (IBF_BGRU32,        GenericBitmapSerializer $ ImageEncoder $ encodeIBF_BGRU32)
     , (IBF_RGB24A4VR,     GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4VR)
     , (IBF_RGB24A4,       GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB24A4)
     , (IBF_RGB32,         GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32)
@@ -387,7 +504,10 @@ encodeIBF_IDBGR24R2RZ64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'b') `S.con
           key       = S.keyStringCells :: B.ByteString
 
 encodeIBF_IDBGR24HZH :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_IDBGR24HZH = encodeHex . S.fromStringCells . compress . encodeImageFmt IBF_BGR24H
+encodeIBF_IDBGR24HZH = ((S.toMainChar (S.keyStringCells :: s) $ 'z') `S.cons`) . encodeHex . S.fromStringCells . compress . encodeImageFmt IBF_BGR24H
+
+encodeIBF_IDRGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDRGB32Z64 = ((S.toMainChar (S.keyStringCells :: s) $ 'l') `S.cons`) . encodeImageFmt IBF_RGB32Z64
 
 encodeIBF_BGR24H :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_BGR24H b =
@@ -479,6 +599,62 @@ encodeIBF_BGR24A4VR b =
           padCell     = S.toMainChar key $ padByte
           key         = S.keyStringCells :: s
 
+encodeIBF_BGRU32VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGRU32VR b =
+    S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
+    where getComponent (row, column, orgb)
+              | orgb   > 3         =
+                  getComponent (row, succ column, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (maxRow - row, column)
+                      componentGetter =
+                          case orgb of
+                              3 -> const padCell
+                              2 -> S.toMainChar key . (red   <:)
+                              1 -> S.toMainChar key . (green <:)
+                              0 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow    = abs . pred $ height
+          maxColumn = abs . pred $ width
+          padCell   = S.toMainChar key $ padByte
+          key       = S.keyStringCells :: s
+
+encodeIBF_BGRU32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGRU32 b =
+    S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
+    where getComponent (row, column, orgb)
+              | orgb   > 3         =
+                  getComponent (row, succ column, 0)
+              | column > maxColumn =
+                  getComponent (succ row, 0, 0)
+              | row    > maxRow    =
+                  Nothing
+              | otherwise =
+                  let pixel = pixelf (row, column)
+                      componentGetter =
+                          case orgb of
+                              3 -> const padCell
+                              2 -> S.toMainChar key . (red   <:)
+                              1 -> S.toMainChar key . (green <:)
+                              0 -> S.toMainChar key . (blue  <:)
+                              _ -> undefined
+                  in  Just (componentGetter pixel, (row, column, succ orgb))
+          pixelf = (b `getPixel`)
+          (width_, height_) = dimensions b
+          (width, height) = (fromIntegral width_, fromIntegral height_)
+          maxRow    = abs . pred $ height
+          maxColumn = abs . pred $ width
+          padCell   = S.toMainChar key $ padByte
+          key       = S.keyStringCells :: s
+
 encodeIBF_RGB24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4VR b =
     S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
@@ -544,11 +720,14 @@ encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeImageFmt IB
 
 defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
 defaultImageDecoders =
-    [ (IBF_IDRGB24Z64,    GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDRGB24Z64)
+    [ (IBF_IDRGB32Z64,    GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDRGB32Z64)
+    , (IBF_IDRGB24Z64,    GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDRGB24Z64)
     , (IBF_IDBGR24R2RZ64, GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDBGR24R2RZ64)
     , (IBF_IDBGR24HZH,    GenericBitmapSerializer $ ImageDecoder $ tryIBF_IDBGR24HZH)
     , (IBF_BGR24H,        GenericBitmapSerializer $ ImageDecoder $ tryIBF_BGR24H)
     , (IBF_BGR24A4VR,     GenericBitmapSerializer $ ImageDecoder $ tryIBF_BGR24A4VR)
+    , (IBF_BGRU32VR,      GenericBitmapSerializer $ ImageDecoder $ tryIBF_BGRU32VR)
+    , (IBF_BGRU32,        GenericBitmapSerializer $ ImageDecoder $ tryIBF_BGRU32)
     , (IBF_RGB24A4VR,     GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4VR)
     , (IBF_RGB24A4,       GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB24A4)
     , (IBF_RGB32,         GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32)
@@ -611,9 +790,16 @@ tryIBF_IDBGR24R2RZ64 metaBitmap s_
 tryIBF_IDBGR24HZH :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_IDBGR24HZH metaBitmap s_
     | (Just ('z', s')) <- (first S.toChar) <$> S.safeUncons s_
-        = decodeImageFmt IBF_BGR24H metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_BGR24HZH: not a valid sequence of characters representing a base-16 encoded string") Right $ decodeHex s')
+        = decodeImageFmt IBF_BGR24H metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_IDBGR24HZH: not a valid sequence of characters representing a base-16 encoded string") Right $ decodeHex s')
     | otherwise
-        = Left "Data.Bitmap.Class.tryIBF_BGR24HZH: string does not begin with identifying 'z' character"
+        = Left "Data.Bitmap.Class.tryIBF_IDBGR24HZH: string does not begin with identifying 'z' character"
+
+tryIBF_IDRGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDRGB32Z64 metaBitmap s_
+    | (Just ('l', s')) <- (first S.toChar) <$> S.safeUncons s_
+        = decodeImageFmt IBF_RGB32Z64 metaBitmap s'
+    | otherwise
+        = Left "Data.Bitmap.Class.tryIBF_IDRGB32Z64: string does not begin with identifying 'l' character"
 
 tryIBF_BGR24H :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_BGR24H metaBitmap s_
@@ -669,6 +855,39 @@ tryIBF_BGR24A4VR metaBitmap s
           minLength     = fromIntegral $ bytesPerRow * height
           maxRow        = abs . pred $ height
           pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral $ maxRow - row) + bytesPerPixel * (fromIntegral column)
+                                 in  (red   =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                   . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                   . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
+                                   $ leastIntensity
+
+tryIBF_BGRU32VR :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGRU32VR metaBitmap s
+    | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGRU32VR: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+    | otherwise              = Right $
+        constructPixels pixelf dms
+    where (width, height) = dimensions metaBitmap
+          dms     = (fromIntegral width, fromIntegral height)
+          bytesPerPixel = 4
+          bytesPerRow   = bytesPerPixel * width
+          minLength     = fromIntegral $ bytesPerRow * height
+          maxRow        = abs . pred $ height
+          pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral $ maxRow - row) + bytesPerPixel * (fromIntegral column)
+                                 in  (red   =: (S.toWord8 $ s `S.index` (offset + 2)))
+                                   . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
+                                   . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
+                                   $ leastIntensity
+
+tryIBF_BGRU32 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGRU32 metaBitmap s
+    | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGRU32: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
+    | otherwise              = Right $
+        constructPixels pixelf dms
+    where (width, height) = dimensions metaBitmap
+          dms     = (fromIntegral width, fromIntegral height)
+          bytesPerPixel = 4
+          bytesPerRow   = bytesPerPixel * width
+          minLength     = fromIntegral $ bytesPerRow * height
+          pixelf (row, column) = let offset = fromIntegral $ bytesPerRow * (fromIntegral row) + bytesPerPixel * (fromIntegral column)
                                  in  (red   =: (S.toWord8 $ s `S.index` (offset + 2)))
                                    . (green =: (S.toWord8 $ s `S.index` (offset + 1)))
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
@@ -803,3 +1022,11 @@ dimensionsFit (widthSuper, heightSuper) (widthSub, heightSub)
     | widthSub  > widthSuper  = False
     | heightSub > heightSuper = False
     | otherwise               = True
+
+-- | Returns the width of a bitmap
+bitmapWidth :: (Bitmap bmp) => bmp -> BIndexType bmp
+bitmapWidth bmp = let (width, _) = dimensions bmp in width
+
+-- | Returns the height of a bitmap
+bitmapHeight :: (Bitmap bmp) => bmp -> BIndexType bmp
+bitmapHeight bmp = let (_, height) = dimensions bmp in height

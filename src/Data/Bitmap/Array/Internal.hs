@@ -8,8 +8,6 @@ import Data.Array.Unboxed
 import Data.Binary
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
-import Data.Bitmap.Reflectable
-import Data.Bitmap.Searchable
 import Data.Bitmap.Types
 import Data.Serialize
 
@@ -38,6 +36,3 @@ instance Bitmap BitmapArray where
                                             maxColumn = abs . pred $ width
                                             f'        = unwrapPixelRGBA . toPixelRGBA . f
                                         in  BitmapArray . array ((0, 0), (maxRow, maxColumn)) $ [(i, f' i) | row <- [0..maxRow], column <- [0..maxColumn], let i = (row, column)]
-
-instance BitmapSearchable  BitmapArray
-instance BitmapReflectable BitmapArray

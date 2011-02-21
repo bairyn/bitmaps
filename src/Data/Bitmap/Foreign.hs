@@ -12,8 +12,6 @@ import qualified Data.Bitmap      as FB
 import qualified Data.Bitmap.IO   as FB
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
-import Data.Bitmap.Reflectable
-import Data.Bitmap.Searchable
 import Data.Bitmap.Types
 import Foreign (unsafePerformIO)
 import Foreign.Storable
@@ -72,6 +70,3 @@ instance Bitmap BitmapForeign where
                             m (row, succ column)
             m (0, 0)
         return $ BitmapForeign fbBitmap
-
-instance BitmapSearchable  BitmapForeign
-instance BitmapReflectable BitmapForeign

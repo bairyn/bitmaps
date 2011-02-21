@@ -116,7 +116,7 @@ formatEq a b
 
 -- | Default 'BitmapString' format
 --
--- There is currently no equivalent image format.
+-- This is equivalent to 'IBF_BGRU32'
 defaultBSFormat :: BitmapString
 defaultBSFormat = BitmapString
     { _bmps_data           = error "data of defaultBSFormat is undefined"

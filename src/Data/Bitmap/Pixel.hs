@@ -1,6 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TypeOperators, DeriveDataTypeable #-}
 
 -- | Support for pixels with a colour depth of 24 or 32, either lacking or containing an alpha component
+--
+-- Greater precision and color depth are not yet supported.  Support for
+-- floating point representations of components is planned for the
+-- future.
 
 module Data.Bitmap.Pixel
     ( Pixel(..)

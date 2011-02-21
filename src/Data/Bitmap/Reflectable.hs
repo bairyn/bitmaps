@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances, OverlappingInstances, UndecidableInstances #-}
+
 module Data.Bitmap.Reflectable
     ( BitmapReflectable(..)
     ) where
@@ -22,3 +24,5 @@ class (Bitmap bmp) => BitmapReflectable bmp where
         where dms@(width, _)  = dimensions b
               maxColumn = abs . pred $ width
               f (r, c) = getPixel b (r,  maxColumn - c)
+
+instance (Bitmap a) => BitmapReflectable a
