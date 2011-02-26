@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, OverlappingInstances, UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances, OverlappingInstances, UndecidableInstances, ScopedTypeVariables #-}
 
 module Data.Bitmap.Searchable
     ( BitmapSearchable(..)
@@ -24,6 +24,18 @@ import Data.List (nub)
 -- these; of course, implementations are free
 -- to define more efficient versions.
 class (Bitmap bmp) => BitmapSearchable bmp where
+    foldrCoords ::
+        (Coordinates (BIndexType bmp) -> a -> a)
+     -> a
+     -> Coordinates (BIndexType bmp)  -- Minimum, upper-left coordinates
+     -> Coordinates (BIndexType bmp)  -- Maximum, lower-right coordinates
+     -> bmp
+     -> a
+         -- ^ TODO: document
+         -- always row-by-row, after left-to-right (from the perspective of from beginning / head / left)
+
+         -- Note: this was added later than it should have been, and should be used more than it is.
+
     findPixel ::
         (BPixelType bmp -> Bool)
      -> bmp
@@ -77,7 +89,7 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> bmp  -- Super bitmap
      -> bmp  -- Sub bitmap
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))  
+     -> Maybe (Coordinates (BIndexType bmp))
     findSubBitmapEqual ::
         bmp  -- Super bitmap
      -> bmp  -- Sub bitmap
@@ -95,7 +107,7 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
     findEmbeddedBitmap ::
-     (Integral i, Bitmap bmp)
+     (Integral i)
      => [bmp]
      -> bmp  -- Super bitmap
      -> Coordinates (BIndexType bmp)  -- Coordinates relative to super bitmap
@@ -145,32 +157,49 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                  -- more convenient to implement.
 
     findEmbeddedBitmapString ::
-     (Integral i, Bitmap bmp)
+     (Integral i)
      => ((i, bmp) -> a -> a)
      -> a
      -> [bmp]
      -> bmp
      -> Coordinates (BIndexType bmp)
-     -> a -- 'foldr' equivalent of 'findEmbeddedBitmap' for a horizontal string of embedded bitmaps
+     -> a -- ^ 'foldr' equivalent of 'findEmbeddedBitmap' for a horizontal string of embedded bitmaps
           --
           -- This is particularly convenient for OCR with a static and known font with multiple characters.
 
+    findFixedEmbeddedBitmapString ::
+        Dimensions (Maybe (BIndexType bmp))
+     -> [bmp]
+     -> bmp
+     -> Coordinates (BIndexType bmp)
+     -> Maybe (Coordinates (BIndexType bmp))
+        -- ^ Scan for the given string of horizontally embedded bitmaps as in 'findEmbeddedBitmap'
+        --
+        -- As with 'findEmbeddedBitmapString', each bitmap must be adjacent to match.
+        -- If the integer is passed for a dimension ("(width, height)"), then
+        -- no more than "the value" extra rows or columns will be checked.
+        -- For example, if 'Just' @0@ is passed for the row value, then no
+        -- additional rows will be checked.
+
+    foldrCoords f z base_i@(baseRow, _) (maxRow, maxColumn) bmp = go base_i
+        where maxRow'    = min maxRow    $ pred (bitmapHeight bmp)
+              maxColumn' = min maxColumn $ pred (bitmapWidth  bmp)
+              go i@(row, column)
+                  | column > maxColumn'
+                      = go (succ row, baseRow)
+                  | row    > maxRow'
+                      = z
+                  | otherwise
+                      = i `f` go (row, succ column)
+
     findPixel f b = findPixelOrder f b (0, 0)
 
-    findPixelOrder f b = r'
-        where r' i@(row, column)
-                  | column > maxColumn =
-                      r' (succ row, 0)
-                  | row    > maxRow    =
-                      Nothing
-                  | f $ getPixel b i   =
-                      Just i
-                  | otherwise          =
-                      r' (row, succ column)
-
-              (width, height) = dimensions b
-              maxRow    = abs . pred $ height
-              maxColumn = abs . pred $ width
+    findPixelOrder f bmp startCoords = foldrCoords step Nothing startCoords (dimensions bmp) bmp
+        where step coords
+                  | f $ getPixel bmp coords
+                      = const $ Just coords
+                  | otherwise
+                      = id
 
     findPixelEqual p = findPixelOrder (== p)
 
@@ -329,6 +358,26 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                   case findEmbeddedBitmap allEmbs super pos of
                       (Nothing)         -> z
                       (Just r@(_, bmp)) -> r `f` go (row, column + (max 1 $ bitmapWidth bmp))
+
+    findFixedEmbeddedBitmapString (extraRowsW, extraColumnsW) allEmbs super base_i@(base_row, base_column) =
+        foldrCoords step zero base_i (base_row + extraRows, base_column + extraColumns) super
+        where maxRow    = abs . pred $ bitmapHeight super
+              maxColumn = abs . pred $ bitmapWidth  super
+              maxExtraRows    = maxRow    - base_row
+              maxExtraColumns = maxColumn - base_column
+              extraRows    = maybe maxExtraRows    (max 0 . min maxExtraRows)    extraRowsW
+              extraColumns = maybe maxExtraColumns (max 0 . min maxExtraColumns) extraColumnsW
+              zero = Nothing
+              step i a
+                  | textFound i = Just i
+                  | otherwise   = a
+              textFound = go allEmbs
+              go []     _               = True
+              go (e:es) i@(row, column)
+                  | (Just (_ :: Int, _)) <- findEmbeddedBitmap [e] super i
+                      = go es (row, column + bitmapWidth e)
+                  | otherwise
+                      = False
 
 instance (Bitmap a) => BitmapSearchable a
 
