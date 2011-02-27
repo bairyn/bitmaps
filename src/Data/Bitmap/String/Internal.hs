@@ -403,6 +403,7 @@ tryIBF_RGB24A4' = tryBSFormat "tryIBF_RGB24A4'" bitmapFmtRGB24A4
 tryIBF_RGB32' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapString
 tryIBF_RGB32' = tryBSFormat "tryIBF_RGB32'" bitmapFmtRGB32
 
+{-
 instance BitmapSearchable BitmapString where
     findSubBitmapEqual super sub_unformatted =
         let sub                       = convertInternalFormat super sub_unformatted
@@ -437,6 +438,7 @@ instance BitmapSearchable BitmapString where
                           | otherwise
                               = matches (succ offRow)
         in r'
+-}
 
 instance BitmapReflectable BitmapString where
     reflectVertically   = bmps_rowFromTop     $: not
