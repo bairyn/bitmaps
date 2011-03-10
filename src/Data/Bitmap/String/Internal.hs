@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, TypeFamilies #-}
 
 module Data.Bitmap.String.Internal
-    ( BitmapString(..), bmps_data, bmps_dimensions, bmps_rowAlignment, bmps_redHead, bmps_alphaHead, bmps_paddingHead, bmps_paddingTail, bmps_rowFromTop, bmps_columnFromLeft
+    ( BitmapString(..), bmps_data, bmps_dimensions, bmps_rowAlignment, bmps_redHead, bmps_alphaHead, bmps_paddingHead, bmps_paddingTail, bmps_rowFromTop, bmps_columnFromLeft, bmps_rowFromBeg, bmps_rowFromEnd, bmps_columnFromBeg, bmps_columnFromEnd
     , formatEq
     , defaultBSFormat
     , rowPadding
@@ -37,6 +37,7 @@ import qualified Data.ByteString.Lazy as B
 import qualified Data.Serialize       as S
 import qualified Data.String.Class    as S
 import Data.Bitmap.Class
+import Data.Bitmap.Croppable
 import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
@@ -62,7 +63,7 @@ import Text.Printf
 -- This type is most efficient with lazy bytestrings.
 data BitmapString = BitmapString
     { _bmps_data            :: S.GenString       -- ^ Bitmap data; it is assumed to be large enough
-    , _bmps_dimensions      :: Dimensions (BIndexType BitmapString)  -- ^ Width and height of the bitmap
+    , _bmps_dimensions      :: Dimensions (BIndexType BitmapString)  -- ^ Width and height of the data; 'bmps_rowFromBeg', etc. need to be taken account for the dimensions of the bitmap
 
     , _bmps_rowAlignment    :: Int             -- ^ Each row is aligned to this many bytes; when necessary, null bytes are added to each row
     , _bmps_redHead         :: Bool            -- ^ Whether the red component is first; if 'True', the order of the components is red, green, blue; otherwise, it is blue, green, red
@@ -71,13 +72,17 @@ data BitmapString = BitmapString
     , _bmps_paddingTail     :: Int             -- ^ Number of unused bytes after each pixel
     , _bmps_rowFromTop      :: Bool            -- ^ Is the first row at the top?
     , _bmps_columnFromLeft  :: Bool            -- ^ Is the first column in each row at the left?
+    , _bmps_rowFromBeg      :: Int             -- ^ How many rows of data to skip from the beginning (from *first* row); used in cropping
+    , _bmps_rowFromEnd      :: Int             -- ^ How many rows of data to skip from the end; used in cropping
+    , _bmps_columnFromBeg   :: Int
+    , _bmps_columnFromEnd   :: Int
     }
 
 mkLabels [''BitmapString]
 
 -- The data is serialized as a lazy bytestring
 instance Binary BitmapString where
-    get   = pure BitmapString <*> (S.toStringCells <$> (get :: Get B.ByteString)) <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get
+    get   = pure BitmapString <*> (S.toStringCells <$> (get :: Get B.ByteString)) <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get
     put b = do
         put ((S.toStringCells :: S.GenString -> B.ByteString) $ bmps_data <: b)
         put $ bmps_dimensions     <: b
@@ -88,10 +93,14 @@ instance Binary BitmapString where
         put $ bmps_paddingTail    <: b
         put $ bmps_rowFromTop     <: b
         put $ bmps_columnFromLeft <: b
+        put $ bmps_rowFromBeg     <: b
+        put $ bmps_rowFromEnd     <: b
+        put $ bmps_columnFromBeg  <: b
+        put $ bmps_columnFromEnd  <: b
 
 -- The data is serialized as a lazy bytestring
 instance S.Serialize BitmapString where
-    get   = pure BitmapString <*> (S.toStringCells <$> (S.get :: S.Get B.ByteString)) <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get
+    get   = pure BitmapString <*> (S.toStringCells <$> (S.get :: S.Get B.ByteString)) <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get <*> S.get
     put b = do
         S.put ((S.toStringCells :: S.GenString -> B.ByteString) $ bmps_data <: b)
         S.put $ bmps_dimensions     <: b
@@ -102,6 +111,10 @@ instance S.Serialize BitmapString where
         S.put $ bmps_paddingTail    <: b
         S.put $ bmps_rowFromTop     <: b
         S.put $ bmps_columnFromLeft <: b
+        S.put $ bmps_rowFromBeg     <: b
+        S.put $ bmps_rowFromEnd     <: b
+        S.put $ bmps_columnFromBeg  <: b
+        S.put $ bmps_columnFromEnd  <: b
 
 formatEq :: BitmapString -> BitmapString -> Bool
 formatEq a b
@@ -112,6 +125,10 @@ formatEq a b
     | bmps_paddingTail    <: a /= bmps_paddingTail    <: b = False
     | bmps_rowFromTop     <: a /= bmps_rowFromTop     <: b = False
     | bmps_columnFromLeft <: a /= bmps_columnFromLeft <: b = False
+    | bmps_rowFromBeg     <: a /= bmps_rowFromBeg     <: b = False
+    | bmps_rowFromEnd     <: a /= bmps_rowFromEnd     <: b = False
+    | bmps_columnFromBeg  <: a /= bmps_columnFromBeg  <: b = False
+    | bmps_columnFromEnd  <: a /= bmps_columnFromEnd  <: b = False
     | otherwise                                            = True
 
 -- | Default 'BitmapString' format
@@ -129,6 +146,10 @@ defaultBSFormat = BitmapString
     , _bmps_paddingTail    = 1
     , _bmps_rowFromTop     = True
     , _bmps_columnFromLeft = True
+    , _bmps_rowFromBeg     = 0
+    , _bmps_rowFromEnd     = 0
+    , _bmps_columnFromBeg  = 0
+    , _bmps_columnFromEnd  = 0
     }
 
 -- | Return (rowSize, paddingSize) based on width, bytes per pixel, and alignment
@@ -202,7 +223,6 @@ pixelPart bmp pixel part
     | True      <- bmps_redHead   <: bmp
         = case baseIndex of
             0 -> r red
-            --0 -> trace (printf "DEBBBUG: r: %d" (red <: pixel)) $ r red  -------------------------------------- TODO UNDEFINED undefined TODO
             1 -> r green
             2 -> r blue
             _ -> padCell
@@ -233,9 +253,10 @@ constructBitmapStringFormatted metaBitmap dms@(width, height) f =
         maxColumn       = abs . pred $ width
         pixelSize       = bytesPerPixel metaBitmap
         (_, paddingSize) = rowPadding pixelSize width (bmps_rowAlignment <: metaBitmap)
-        newImageSize    = (pixelSize * width + paddingSize) * height
+        rowSize         = pixelSize * (width + bmps_columnFromBeg <: metaBitmap + bmps_columnFromEnd <: metaBitmap) + paddingSize
+        newImageSize    = rowSize * (height + bmps_rowFromBeg <: metaBitmap + bmps_rowFromEnd <: metaBitmap)
         data_ :: S.GenStringDefault
-        data_ = S.unfoldrN newImageSize getComponent (0 :: BIndexType BitmapString, 0 :: BIndexType BitmapString, 0 :: Int, 0 :: Int)
+        data_ = S.unfoldrN newImageSize getComponent (0 :: BIndexType BitmapString, 0 :: BIndexType BitmapString, 0 :: Int, rowSize * bmps_rowFromBeg <: metaBitmap :: Int)
         key   = S.keyStringCells :: S.GenStringDefault
         padCell     = S.toMainChar key $ padByte
         getComponent (row, column, part, paddingLeft)
@@ -245,6 +266,8 @@ constructBitmapStringFormatted metaBitmap dms@(width, height) f =
                 getComponent (row, succ column, 0, 0)
             | column >  maxColumn =
                 getComponent (succ row, 0, 0, paddingSize)
+            | row    == succ maxRow =
+                getComponent (succ row, column, part, rowSize * bmps_rowFromEnd <: metaBitmap)
             | row    >  maxRow    =
                 Nothing
             | otherwise =
@@ -258,7 +281,9 @@ instance Bitmap BitmapString where
 
     depth = maybe Depth24RGB (const Depth32RGBA) . (bmps_alphaHead <:)
 
-    dimensions = (bmps_dimensions <:)
+    dimensions bmp =
+        let (width, height) = bmps_dimensions <: bmp
+        in  (width - bmps_columnFromEnd <: bmp - bmps_columnFromBeg <: bmp, height - bmps_rowFromEnd <: bmp - bmps_rowFromBeg <: bmp)
 
     getPixel b (row, column) =
         let data_              = bmps_data <: b
@@ -267,16 +292,18 @@ instance Bitmap BitmapString where
             maxColumn          = abs . pred $ width
             rowSize            = fst $ rowPaddingBS b
             pixelSize          = bytesPerPixel b
+            row'               = row    + bmps_rowFromBeg <: b
+            column'            = column + bmps_columnFromBeg <: b
             rowOffset
                 | bmps_rowFromTop <: b =
-                    rowSize * row
+                    rowSize * row'
                 | otherwise            =
-                    rowSize * (maxRow - row)
+                    rowSize * (maxRow - row')
             columnOffset
                 | bmps_columnFromLeft <: b =
-                    pixelSize * column
+                    pixelSize * column'
                 | otherwise                =
-                    pixelSize * (maxColumn - column)
+                    pixelSize * (maxColumn - column')
             offset             = rowOffset + columnOffset
             (offR, offG, offB) = rgbOffsets b
         in  PixelBGR
@@ -319,6 +346,10 @@ bitmapFmtBGR24A4VR = BitmapString
     , _bmps_paddingTail    = 0
     , _bmps_rowFromTop     = False
     , _bmps_columnFromLeft = True
+    , _bmps_rowFromBeg     = 0
+    , _bmps_rowFromEnd     = 0
+    , _bmps_columnFromBeg  = 0
+    , _bmps_columnFromEnd  = 0
     }
 
 bitmapFmtRGB24A4VR :: BitmapString
@@ -333,6 +364,10 @@ bitmapFmtRGB24A4VR = BitmapString
     , _bmps_paddingTail    = 0
     , _bmps_rowFromTop     = False
     , _bmps_columnFromLeft = True
+    , _bmps_rowFromBeg     = 0
+    , _bmps_rowFromEnd     = 0
+    , _bmps_columnFromBeg  = 0
+    , _bmps_columnFromEnd  = 0
     }
 
 bitmapFmtRGB24A4 :: BitmapString
@@ -347,6 +382,10 @@ bitmapFmtRGB24A4 = BitmapString
     , _bmps_paddingTail    = 0
     , _bmps_rowFromTop     = True
     , _bmps_columnFromLeft = True
+    , _bmps_rowFromBeg     = 0
+    , _bmps_rowFromEnd     = 0
+    , _bmps_columnFromBeg  = 0
+    , _bmps_columnFromEnd  = 0
     }
 
 bitmapFmtRGB32 :: BitmapString
@@ -361,6 +400,10 @@ bitmapFmtRGB32 = BitmapString
     , _bmps_paddingTail    = 0
     , _bmps_rowFromTop     = True
     , _bmps_columnFromLeft = True
+    , _bmps_rowFromBeg     = 0
+    , _bmps_rowFromEnd     = 0
+    , _bmps_columnFromBeg  = 0
+    , _bmps_columnFromEnd  = 0
     }
 
 -- | Used by the encoders
@@ -404,6 +447,7 @@ tryIBF_RGB32' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapS
 tryIBF_RGB32' = tryBSFormat "tryIBF_RGB32'" bitmapFmtRGB32
 
 {-
+-- TODO: work with crop as well
 instance BitmapSearchable BitmapString where
     findSubBitmapEqual super sub_unformatted =
         let sub                       = convertInternalFormat super sub_unformatted
@@ -441,5 +485,19 @@ instance BitmapSearchable BitmapString where
 -}
 
 instance BitmapReflectable BitmapString where
-    reflectVertically   = bmps_rowFromTop     $: not
-    reflectHorizontally = bmps_columnFromLeft $: not
+    reflectVertically   b = (bmps_rowFromTop $: not)
+                          . (bmps_rowFromBeg =: bmps_rowFromEnd <: b)
+                          . (bmps_rowFromEnd =: bmps_rowFromBeg <: b)
+                          $ b
+    reflectHorizontally b = (bmps_columnFromLeft $: not)
+                          . (bmps_columnFromBeg =: bmps_columnFromEnd <: b)
+                          . (bmps_columnFromEnd =: bmps_columnFromBeg <: b)
+                         $ b
+
+instance BitmapCroppable BitmapString where
+    crop bmp (row, column) (width, height) =
+        (bmps_rowFromBeg    $: (+ row))
+      . (bmps_rowFromEnd    $: (+ (bitmapHeight bmp - height - row)))
+      . (bmps_columnFromBeg $: (+ column))
+      . (bmps_columnFromEnd $: (+ (bitmapWidth  bmp - width  - column)))
+      $ bmp

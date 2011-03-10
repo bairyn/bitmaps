@@ -8,6 +8,7 @@
 module Data.Bitmap.BMP
     ( module Data.Bitmap.Array
     , module Data.Bitmap.Class
+    , module Data.Bitmap.Croppable
     , module Data.Bitmap.Foreign
     , module Data.Bitmap.Function
     , module Data.Bitmap.Pixel
@@ -19,6 +20,7 @@ module Data.Bitmap.BMP
 
 import Data.Bitmap.Array
 import Data.Bitmap.Class
+import Data.Bitmap.Croppable
 import Data.Bitmap.Foreign
 import Data.Bitmap.Function
 import Data.Bitmap.Pixel
