@@ -25,37 +25,38 @@ import Data.List (nub)
 -- these; of course, implementations are free
 -- to define more efficient versions.
 class (Bitmap bmp) => BitmapSearchable bmp where
+    -- | Recursively call a function with the coordinates, row by row from the left, from
+    -- the minimum, upper-left coordinates to the maximum, lower-right coordinates
     foldrCoords ::
         (Coordinates (BIndexType bmp) -> a -> a)
+     -> a                             -- ^ Starting value
+     -> Coordinates (BIndexType bmp)  -- ^ Minimum, upper-left coordinates
+     -> Coordinates (BIndexType bmp)  -- ^ Maximum, lower-right coordinates
+     -> bmp                           -- ^ The bitmap in which to scan coordinates
      -> a
-     -> Coordinates (BIndexType bmp)  -- Minimum, upper-left coordinates
-     -> Coordinates (BIndexType bmp)  -- Maximum, lower-right coordinates
-     -> bmp
-     -> a
-         -- ^ TODO: document
-         -- always row-by-row, after left-to-right (from the perspective of from beginning / head / left)
 
-         -- Note: this was added later than it should have been, and should be used more than it is.
-
+    -- | Scan each pixel until a match is found in no particular order
+    --
+    -- Implementations are free to choose an efficient implementation that
+    -- searches in a different direction from that of 'findPixelOrder'.
+    -- This function is often, but not necessarily always, the same as
+    -- 'findPixelOrder'.
     findPixel ::
         (BPixelType bmp -> Bool)
      -> bmp
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ Scan each pixel until a match is found in no particular order
-                                                --
-                                                -- Implementations are free to choose an efficient implementation that
-                                                -- searches in a different direction from that of 'findPixelOrder'.
-                                                -- This function is often, but not necessarily always, the same as
-                                                -- 'findPixelOrder'.
+     -> Maybe (Coordinates (BIndexType bmp))
+    -- | Scan each pixel, row by row from the left, starting at the given offset, until a match is found
     findPixelOrder ::
         (BPixelType bmp -> Bool)
      -> bmp
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ Scan each pixel, row by row from the left, starting at the given offset, until a match is found
+     -> Maybe (Coordinates (BIndexType bmp))
+    -- | A more restricted version of 'findPixelEqual' that is usually more efficient when exact equality is desired
     findPixelEqual ::
         BPixelType bmp
      -> bmp
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findPixelEqual' that is usually more efficient when exact equality is desired
+     -> Maybe (Coordinates (BIndexType bmp))
     findPixels ::
         (BPixelType bmp -> Bool)
      -> bmp
@@ -67,123 +68,132 @@ class (Bitmap bmp) => BitmapSearchable bmp where
      -> Coordinates (BIndexType bmp)
      -> [Coordinates (BIndexType bmp)]
 
+    -- | Search for coordinates where a sub-bitmap would match
+    --
+    -- Each coordinate, representing the upper-left-most corner,
+    -- for which the sub-bitmap would fit is tried for a match until
+    -- the function returns 'True' for every pixel that is compared.
+    -- The function is passed the pixel of the super bitmap which is searched
+    -- as the first parameter, and the pixel of the sub bitmap is passed
+    -- as the second parameter.  Likewise, the super bitmap is then given
+    -- to this function as the second parameter, and then the sub bitmap.
+    -- Normally, the order in which the bitmap is checked in the same order
+    -- as 'findPixelOrder', but implementation are free to implement this
+    -- in whatever order is convenient or efficient; implementation should,
+    -- however, assume that callers usually expect this order to be the most
+    -- efficient one.
     findSubBitmap ::
         (BPixelType bmp -> BPixelType bmp -> Bool)
-     -> bmp  -- Super bitmap
-     -> bmp  -- Sub bitmap
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ Search for where a sub-bitmap would match
-                                                --
-                                                -- Each coordinate, representing the upper-left-most corner,
-                                                -- for which the sub-bitmap would fit is tried for a match until
-                                                -- the function returns 'True' for every pixel that is compared.
-                                                -- The function is passed the pixel of the super bitmap which is searched
-                                                -- as the first parameter, and the pixel of the sub bitmap is passed
-                                                -- as the second parameter.  Likewise, the super bitmap is then given
-                                                -- to this function as the second parameter, and then the sub bitmap.
-                                                -- Normally, the order in which the bitmap is checked in the same order
-                                                -- as 'findPixelOrder', but implementation are free to implement this
-                                                -- in whatever order is convenient or efficient; implementation should,
-                                                -- however, assume that callers usually expect this order to be the most
-                                                -- efficient one.
+     -> bmp  -- ^ Super bitmap
+     -> bmp  -- ^ Sub bitmap
+     -> Maybe (Coordinates (BIndexType bmp))
     findSubBitmapOrder ::
         (BPixelType bmp -> BPixelType bmp -> Bool)
-     -> bmp  -- Super bitmap
-     -> bmp  -- Sub bitmap
+     -> bmp  -- ^ Super bitmap
+     -> bmp  -- ^ Sub bitmap
      -> Coordinates (BIndexType bmp)
      -> Maybe (Coordinates (BIndexType bmp))
+
+    -- | A more restricted version of 'findSubBitmapEqual' that is usually more efficient when exact equality is desired
     findSubBitmapEqual ::
-        bmp  -- Super bitmap
-     -> bmp  -- Sub bitmap
+        bmp  -- ^ Super bitmap
+     -> bmp  -- ^ Sub bitmap
      -> Coordinates (BIndexType bmp)
-     -> Maybe (Coordinates (BIndexType bmp))    -- ^ A more restricted version of 'findSubBitmapEqual' that is usually more efficient when exact equality is desired
+     -> Maybe (Coordinates (BIndexType bmp))
     findSubBitmaps ::
         (BPixelType bmp -> BPixelType bmp -> Bool)
-     -> bmp  -- Super bitmap
-     -> bmp  -- Sub bitmap
+     -> bmp  -- ^ Super bitmap
+     -> bmp  -- ^ Sub bitmap
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
     findSubBitmapsEqual ::
-        bmp  -- Super bitmap
-     -> bmp  -- Sub bitmap
+        bmp  -- ^ Super bitmap
+     -> bmp  -- ^ Sub bitmap
      -> Coordinates (BIndexType bmp)
      -> [(Coordinates (BIndexType bmp))]
+
+    -- | Find the first bitmap from the list that matches with
+    -- the area of the same size from the given coordinate in
+    -- the "super" bitmap (passed as the second argument)
+    -- down-right (the coordinate is the first pixel which is
+    -- the top-left most of the area to check).  The match
+    -- sub-bitmap and its index in the list are passed in
+    -- the opposite order given in this description to the
+    -- function, and the result is returned; if one is found.
+    -- If no match is found, 'Nothing' is returned.
+    --
+    -- The "sub" bitmaps are tested in order until a match is
+    -- found, and if one is, its index in the list is
+    -- returned.  Each pixel in every "sub" bitmap is specially
+    -- colored to represent a particular function.  These
+    -- colors are recognized:
+    --
+    -- - black / greatest intensity: the corresponding pixel in
+    -- the "super" bitmap based on position can be any color.
+    -- - white / least intensity: the corresponding pixel in the
+    -- super bitmap must be the same color as every other pixel
+    -- in the super bitmap that also corresponds to a white pixel.
+    --
+    -- - red / FF0000 / completely red: if there are white
+    -- pixels in the sub bitmap, the corresponding pixel of the
+    -- red pixel should be different from the color that
+    -- corresponds to the white pixels.
+    --
+    -- - green / 00FF00 / complete green: if there are white pixels
+    -- in the sub bitmap, the corresponding pixel of the
+    -- green pixel should not be similar from the color
+    -- that corresponds to the white pixels.  See
+    --
+    -- - yellow / FFFF00 / complete yellow: if there are white pixels,
+    -- this matches iff the color is similar to the colors that
+    -- correspond to the white pixels.
+    --
+    -- 'areColorsSimilar' to see whether two colors are
+    -- considered to be "similar".
+    --
+    -- The behaviour when any other pixel is encountered is
+    -- undefined.
+    --
+    -- When the dimensions of a sub bitmap are too large for the
+    -- super bitmap offset by the coordinates, where otherwise
+    -- some pixels of the sub bitmap would not have any
+    -- corresponding pixels in the super bitmap; then the sub
+    -- bitmap simply does not match.
+    --
+    -- This function makes OCR with a known and static font
+    -- more convenient to implement.
     findEmbeddedBitmap ::
      (Integral i)
      => [bmp]
-     -> bmp  -- Super bitmap
-     -> Coordinates (BIndexType bmp)  -- Coordinates relative to super bitmap
+     -> bmp  -- ^ Super bitmap
+     -> Coordinates (BIndexType bmp)  -- ^ Coordinates relative to super bitmap
      -> Maybe (i, bmp)
-                 -- ^ Find the first bitmap from the list that matches with
-                 -- the area of the same size from the given coordinate in
-                 -- the "super" bitmap (passed as the second argument)
-                 -- down-right (the coordinate is the first pixel which is
-                 -- the top-left most of the area to check).  The match
-                 -- sub-bitmap and its index in the list are passed in
-                 -- the opposite order given in this description to the
-                 -- function, and the result is returned; if one is found.
-                 -- If no match is found, 'Nothing' is returned.
-                 --
-                 -- The "sub" bitmaps are tested in order until a match is
-                 -- found, and if one is, its index in the list is
-                 -- returned.  Each pixel in every "sub" bitmap is specially
-                 -- colored to represent a particular function.  These
-                 -- colors are recognized:
-                 --
-                 -- - black / greatest intensity: the corresponding pixel in
-                 -- the "super" bitmap based on position can be any color.
-                 -- - white / least intensity: the corresponding pixel in the
-                 -- super bitmap must be the same color as every other pixel
-                 -- in the super bitmap that also corresponds to a white pixel.
-                 -- - red / FF0000 / completely red: if there are white
-                 -- pixels in the sub bitmap, the corresponding pixel of the
-                 -- red pixel should be different from the color that
-                 -- corresponds to the white pixels.
-                 -- - green / 00FF00 / complete green: if there are white pixels
-                 -- in the sub bitmap, the corresponding pixel of the
-                 -- green pixel should not be similar from the color
-                 -- that corresponds to the white pixels.  See
-                 -- - yellow / FFFF00 / complete yellow: if there are white pixels,
-                 -- this matches iff the color is similar to the colors that
-                 -- correspond to the white pixels.
-                 -- 'areColorsSimilar' to see whether two colors are
-                 -- considered to be "similar".
-                 --
-                 -- The behaviour when any other pixel is encountered is
-                 -- undefined.
-                 --
-                 -- When the dimensions of a sub bitmap are too large for the
-                 -- super bitmap offset by the coordinates, where otherwise
-                 -- some pixels of the sub bitmap would not have any
-                 -- corresponding pixels in the super bitmap; then the sub
-                 -- bitmap simply does not match.
-                 --
-                 -- This function makes OCR with a known and static font
-                 -- more convenient to implement.
 
+    -- | 'foldr' equivalent of 'findEmbeddedBitmap' for a horizontal string of embedded bitmaps
+    --
+    -- This is particularly convenient for OCR with a static and known font with multiple characters.
     findEmbeddedBitmapString ::
      (Integral i)
      => ((i, bmp) -> a -> a)
      -> a
      -> [bmp]
-     -> bmp
+     -> bmp  -- ^ Super bitmap
      -> Coordinates (BIndexType bmp)
-     -> a -- ^ 'foldr' equivalent of 'findEmbeddedBitmap' for a horizontal string of embedded bitmaps
-          --
-          -- This is particularly convenient for OCR with a static and known font with multiple characters.
+     -> a
 
+    -- | Scan for the given string of horizontally embedded bitmaps as in 'findEmbeddedBitmap'
+    --
+    -- As with 'findEmbeddedBitmapString', each bitmap must be adjacent to match.
+    -- If the integer is passed for a dimension ("(width, height)"), then
+    -- no more than "the value" extra rows or columns will be checked.
+    -- For example, if 'Just' @0@ is passed for the row value, then no
+    -- additional rows will be checked.
     findFixedEmbeddedBitmapString ::
         Dimensions (Maybe (BIndexType bmp))
      -> [bmp]
-     -> bmp
+     -> bmp  -- ^ Super bitmap
      -> Coordinates (BIndexType bmp)
      -> Maybe (Coordinates (BIndexType bmp))
-        -- ^ Scan for the given string of horizontally embedded bitmaps as in 'findEmbeddedBitmap'
-        --
-        -- As with 'findEmbeddedBitmapString', each bitmap must be adjacent to match.
-        -- If the integer is passed for a dimension ("(width, height)"), then
-        -- no more than "the value" extra rows or columns will be checked.
-        -- For example, if 'Just' @0@ is passed for the row value, then no
-        -- additional rows will be checked.
 
     foldrCoords f z base_i@(baseRow, _) (maxRow, maxColumn) bmp = go base_i
         where maxRow'    = min maxRow    $ pred (bitmapHeight bmp)
