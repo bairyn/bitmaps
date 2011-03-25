@@ -16,6 +16,7 @@ import Data.Bits
 import qualified Data.Map as M
 import Data.Monoid
 import Data.String.Class
+import Data.Tagged
 import Data.Word
 
 bytes64 :: Array Word8 Word8
@@ -59,9 +60,9 @@ encode64 s
         in  cons4 a'' b'' fillByte64' fillByte64' $ empty
     | otherwise                         =
         empty
-    where base = toMainChar key . (bytes64 !) . toWord8
-          fillByte64' = toMainChar key fillByte64
-          key = keyStringCells :: s
+    where base = untag' . toMainChar . (bytes64 !) . toWord8
+          fillByte64' = untag' . toMainChar $ fillByte64
+          untag' = untag :: Tagged s a -> a
 
 decode64 :: forall s. (StringCells s) => s -> Maybe s
 decode64 s
@@ -81,23 +82,23 @@ decode64 s
                       then do
                           -- abcd
                           cons3
-                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
-                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
-                              (toMainChar key $ (c' `shiftL` 6) .|. d')
+                              (untag' . toMainChar $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                              (untag' . toMainChar $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
+                              (untag' . toMainChar $ (c' `shiftL` 6) .|. d')
                             <$> decode64 s'
                       else do
                           -- abc_
                           Just . cons2
-                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
-                              (toMainChar key $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
+                              (untag' . toMainChar $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                              (untag' . toMainChar $ (b' `shiftL` 4) .|. (c' `shiftR` 2))
                             $ empty
               else do
                   do
                       do
                           -- ab__
                           Just . cons
-                              (toMainChar key $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
+                              (untag' . toMainChar $ (a' `shiftL` 2) .|. (b' `shiftR` 4))
                             $ empty
     | otherwise =
         Just empty
-    where key = keyStringCells :: s
+    where untag' = untag :: Tagged s a -> a

@@ -26,6 +26,7 @@ import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.Serialize       as S
 import qualified Data.String.Class    as S
+import Data.Tagged
 import Text.Printf
 
 -- | Container for a string that represents a sequence of raw pixels lacking the alpha component and that is stored upside down
@@ -94,16 +95,16 @@ instance Bitmap BitmapStringRGB24A4VR where
                       let pixel = f (row, column)
                           componentGetter =
                               case orgb of
-                                  0 -> S.toMainChar key . (red   <:)
-                                  1 -> S.toMainChar key . (green <:)
-                                  2 -> S.toMainChar key . (blue  <:)
+                                  0 -> untag' . S.toMainChar . (red   <:)
+                                  1 -> untag' . S.toMainChar . (green <:)
+                                  2 -> untag' . S.toMainChar . (blue  <:)
                                   _ -> undefined
                       in  Just (componentGetter pixel, (row, column, succ orgb, 0))
               maxRow      = abs . pred $ height
               maxColumn   = abs . pred $ width
               paddingSize = snd $ bytesPerRow width 3 4
-              padCell     = S.toMainChar key $ padByte
-              key         = S.keyStringCells :: B.ByteString
+              padCell     = untag' . S.toMainChar $ padByte
+              untag' = untag :: Tagged B.ByteString a -> a
 
     imageEncoders = updateIdentifiableElements (map (second unwrapGenericBitmapSerializer) defaultImageEncoders) $
         [ (IBF_RGB24A4VR, ImageEncoder $ encodeIBF_RGB24A4VR')

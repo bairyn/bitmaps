@@ -33,9 +33,6 @@ import Control.Applicative
 import Control.Monad.Record
 import Data.Bits
 import Data.Binary
-import qualified Data.ByteString.Lazy as B
-import qualified Data.Serialize       as S
-import qualified Data.String.Class    as S
 import Data.Bitmap.Class
 import Data.Bitmap.Croppable
 import Data.Bitmap.Pixel
@@ -43,6 +40,10 @@ import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
 import Data.Bitmap.Util
+import qualified Data.ByteString.Lazy as B
+import qualified Data.Serialize       as S
+import qualified Data.String.Class    as S
+import Data.Tagged
 import Text.Printf
 
 -- | A bitmap represented as a string or stored as bytes
@@ -235,9 +236,9 @@ pixelPart bmp pixel part
     | otherwise = error "Data.Bitmap.String.Internal.pixelPart: unexpected case"
     where ph        = bmps_paddingHead <: bmp
           baseIndex = part - ph
-          r         = S.toMainChar key . (<: pixel)
-          padCell   = S.toMainChar key $ padByte
-          key       = S.keyStringCells :: S.GenStringDefault
+          r         = untag' . S.toMainChar . (<: pixel)
+          padCell   = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged S.GenStringDefault a -> a
 
 imageSizeBS :: BitmapString -> Int
 imageSizeBS b = (fst $ rowPaddingBS b) * (snd $ dimensions b)
@@ -257,8 +258,8 @@ constructBitmapStringFormatted metaBitmap dms@(width, height) f =
         newImageSize    = rowSize * (height + bmps_rowFromBeg <: metaBitmap + bmps_rowFromEnd <: metaBitmap)
         data_ :: S.GenStringDefault
         data_ = S.unfoldrN newImageSize getComponent (0 :: BIndexType BitmapString, 0 :: BIndexType BitmapString, 0 :: Int, rowSize * bmps_rowFromBeg <: metaBitmap :: Int)
-        key   = S.keyStringCells :: S.GenStringDefault
-        padCell     = S.toMainChar key $ padByte
+        untag' = untag :: Tagged S.GenStringDefault a -> a
+        padCell = untag' . S.toMainChar $ padByte
         getComponent (row, column, part, paddingLeft)
             | paddingLeft > 0     =
                 Just (padCell, (row, column, part, pred paddingLeft))

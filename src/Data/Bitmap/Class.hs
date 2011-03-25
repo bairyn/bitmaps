@@ -82,6 +82,7 @@ import Data.Bitmap.Util
 import qualified Data.ByteString as B  -- For zlib
 import Data.Maybe
 import qualified Data.String.Class as S
+import Data.Tagged
 import Text.Printf
 
 -- | Bitmap class
@@ -452,7 +453,7 @@ defaultImageEncoders =
     ]
 
 encodeIBF_IDRGB24Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_IDRGB24Z64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'm') `S.cons`) . encode64 . S.fromStringCells . compress
+encodeIBF_IDRGB24Z64 b = ((untag' . S.toMainChar $ 'm') `S.cons`) . encode64 . S.fromStringCells . compress
     $ S.unfoldrN (fromIntegral $ 3 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
               | orgb   > 2         =
@@ -465,9 +466,9 @@ encodeIBF_IDRGB24Z64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'm') `S.cons`)
                   let pixel = pixelf (row, column)
                       componentGetter =
                           case orgb of
-                              0 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              2 -> S.toMainChar key . (blue  <:)
+                              0 -> untagBS . S.toMainChar . (red   <:)
+                              1 -> untagBS . S.toMainChar . (green <:)
+                              2 -> untagBS . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -475,10 +476,11 @@ encodeIBF_IDRGB24Z64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'm') `S.cons`)
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          key       = S.keyStringCells :: B.ByteString
+          untag' = untag :: Tagged s a -> a
+          untagBS = untag :: Tagged B.ByteString a -> a
 
 encodeIBF_IDBGR24R2RZ64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_IDBGR24R2RZ64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'b') `S.cons`) . encode64 . S.fromStringCells . compress
+encodeIBF_IDBGR24R2RZ64 b = ((untag' . S.toMainChar $ 'b') `S.cons`) . encode64 . S.fromStringCells . compress
     $ S.unfoldrN (fromIntegral $ 3 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
               | orgb   > 2         =
@@ -491,9 +493,9 @@ encodeIBF_IDBGR24R2RZ64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'b') `S.con
                   let pixel = pixelf (row, column)
                       componentGetter =
                           case orgb of
-                              2 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              0 -> S.toMainChar key . (blue  <:)
+                              2 -> untagBS . S.toMainChar . (red   <:)
+                              1 -> untagBS . S.toMainChar . (green <:)
+                              0 -> untagBS . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -501,13 +503,16 @@ encodeIBF_IDBGR24R2RZ64 b = ((S.toMainChar (S.keyStringCells :: s) $ 'b') `S.con
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          key       = S.keyStringCells :: B.ByteString
+          untag' = untag :: Tagged s a -> a
+          untagBS = untag :: Tagged B.ByteString a -> a
 
 encodeIBF_IDBGR24HZH :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_IDBGR24HZH = ((S.toMainChar (S.keyStringCells :: s) $ 'z') `S.cons`) . encodeHex . S.fromStringCells . compress . encodeImageFmt IBF_BGR24H
+encodeIBF_IDBGR24HZH = ((untag' . S.toMainChar $ 'z') `S.cons`) . encodeHex . S.fromStringCells . compress . encodeImageFmt IBF_BGR24H
+    where untag' = untag :: Tagged s a -> a
 
 encodeIBF_IDRGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
-encodeIBF_IDRGB32Z64 = ((S.toMainChar (S.keyStringCells :: s) $ 'l') `S.cons`) . encodeImageFmt IBF_RGB32Z64
+encodeIBF_IDRGB32Z64 = ((untag' . S.toMainChar $ 'l') `S.cons`) . encodeImageFmt IBF_RGB32Z64
+    where untag' = untag :: Tagged s a -> a
 
 encodeIBF_BGR24H :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_BGR24H b =
@@ -523,9 +528,9 @@ encodeIBF_BGR24H b =
                   let pixel = pixelf (row, column)
                       componentGetter =
                           case orgb of
-                              2 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              0 -> S.toMainChar key . (blue  <:)
+                              2 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              0 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -533,7 +538,7 @@ encodeIBF_BGR24H b =
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          key       = S.keyStringCells :: s
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_RGB24A4 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4 b =
@@ -551,9 +556,9 @@ encodeIBF_RGB24A4 b =
                   let pixel = pixelf (row, column)
                       componentGetter =
                           case orgb of
-                              0 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              2 -> S.toMainChar key . (blue  <:)
+                              0 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              2 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb, 0))
           pixelf = (b `getPixel`)
@@ -564,8 +569,8 @@ encodeIBF_RGB24A4 b =
           paddingSize = case 4 - ((3 * width) `mod` 4) of
                             4 -> 0
                             n -> n
-          padCell     = S.toMainChar key $ padByte
-          key         = S.keyStringCells :: s
+          padCell     = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_BGR24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_BGR24A4VR b =
@@ -583,9 +588,9 @@ encodeIBF_BGR24A4VR b =
                   let pixel = pixelf (maxRow - row, column)
                       componentGetter =
                           case orgb of
-                              2 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              0 -> S.toMainChar key . (blue  <:)
+                              2 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              0 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb, 0))
           pixelf = (b `getPixel`)
@@ -596,8 +601,8 @@ encodeIBF_BGR24A4VR b =
           paddingSize = case 4 - ((3 * width) `mod` 4) of
                             4 -> 0
                             n -> n
-          padCell     = S.toMainChar key $ padByte
-          key         = S.keyStringCells :: s
+          padCell     = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_BGRU32VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_BGRU32VR b =
@@ -614,9 +619,9 @@ encodeIBF_BGRU32VR b =
                       componentGetter =
                           case orgb of
                               3 -> const padCell
-                              2 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              0 -> S.toMainChar key . (blue  <:)
+                              2 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              0 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -624,8 +629,8 @@ encodeIBF_BGRU32VR b =
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          padCell   = S.toMainChar key $ padByte
-          key       = S.keyStringCells :: s
+          padCell   = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_BGRU32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_BGRU32 b =
@@ -642,9 +647,9 @@ encodeIBF_BGRU32 b =
                       componentGetter =
                           case orgb of
                               3 -> const padCell
-                              2 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              0 -> S.toMainChar key . (blue  <:)
+                              2 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              0 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -652,8 +657,8 @@ encodeIBF_BGRU32 b =
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          padCell   = S.toMainChar key $ padByte
-          key       = S.keyStringCells :: s
+          padCell   = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_RGB24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4VR b =
@@ -671,9 +676,9 @@ encodeIBF_RGB24A4VR b =
                   let pixel = pixelf (maxRow - row, column)
                       componentGetter =
                           case orgb of
-                              0 -> S.toMainChar key . (red   <:)
-                              1 -> S.toMainChar key . (green <:)
-                              2 -> S.toMainChar key . (blue  <:)
+                              0 -> untag' . S.toMainChar . (red   <:)
+                              1 -> untag' . S.toMainChar . (green <:)
+                              2 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb, 0))
           pixelf = (b `getPixel`)
@@ -684,8 +689,8 @@ encodeIBF_RGB24A4VR b =
           paddingSize = case 4 - ((3 * width) `mod` 4) of
                             4 -> 0
                             n -> n
-          padCell     = S.toMainChar key $ padByte
-          key         = S.keyStringCells :: s
+          padCell     = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_RGB32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32 b =
@@ -702,9 +707,9 @@ encodeIBF_RGB32 b =
                       componentGetter =
                           case orgb of
                               0 -> const padCell
-                              1 -> S.toMainChar key . (red   <:)
-                              2 -> S.toMainChar key . (green <:)
-                              3 -> S.toMainChar key . (blue  <:)
+                              1 -> untag' . S.toMainChar . (red   <:)
+                              2 -> untag' . S.toMainChar . (green <:)
+                              3 -> untag' . S.toMainChar . (blue  <:)
                               _ -> undefined
                   in  Just (componentGetter pixel, (row, column, succ orgb))
           pixelf = (b `getPixel`)
@@ -712,8 +717,8 @@ encodeIBF_RGB32 b =
           (width, height) = (fromIntegral width_, fromIntegral height_)
           maxRow    = abs . pred $ height
           maxColumn = abs . pred $ width
-          padCell   = S.toMainChar key $ padByte
-          key       = S.keyStringCells :: s
+          padCell   = untag' . S.toMainChar $ padByte
+          untag' = untag :: Tagged s a -> a
 
 encodeIBF_RGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeImageFmt IBF_RGB32

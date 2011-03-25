@@ -22,6 +22,7 @@ import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.Serialize       as S
 import qualified Data.String.Class    as S
+import Data.Tagged
 import Text.Printf
 
 -- | Polymorphic container of a string
@@ -82,15 +83,15 @@ instance Bitmap BitmapStringRGB32 where
                           componentGetter =
                               case orgb of
                                   0 -> const padCell
-                                  1 -> S.toMainChar key . (red   <:)
-                                  2 -> S.toMainChar key . (green <:)
-                                  3 -> S.toMainChar key . (blue  <:)
+                                  1 -> untag' . S.toMainChar . (red   <:)
+                                  2 -> untag' . S.toMainChar . (green <:)
+                                  3 -> untag' . S.toMainChar . (blue  <:)
                                   _ -> undefined
                       in  Just (componentGetter pixel, (row, column, succ orgb))
               maxRow    = abs . pred $ height
               maxColumn = abs . pred $ width
-              padCell   = S.toMainChar key $ padByte
-              key       = S.keyStringCells :: B.ByteString
+              padCell   = untag' . S.toMainChar $ padByte
+              untag' = untag :: Tagged B.ByteString a -> a
 
     imageEncoders = updateIdentifiableElements (map (second unwrapGenericBitmapSerializer) defaultImageEncoders) $
         [ (IBF_RGB32,    ImageEncoder $ encodeIBF_RGB32')
