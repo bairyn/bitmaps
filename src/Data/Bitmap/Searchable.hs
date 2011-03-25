@@ -7,6 +7,7 @@ module Data.Bitmap.Searchable
     , defaultTransparentPixel
     , matchPixelAny
     , matchPixelSame
+    , matchPixelSameThreshold
     , matchPixelDif
     , matchPixelDifThreshold
     ) where
@@ -141,6 +142,9 @@ class (Bitmap bmp) => BitmapSearchable bmp where
                  -- in the sub bitmap, the corresponding pixel of the
                  -- green pixel should not be similar from the color
                  -- that corresponds to the white pixels.  See
+                 -- - yellow / FFFF00 / complete yellow: if there are white pixels,
+                 -- this matches iff the color is similar to the colors that
+                 -- correspond to the white pixels.
                  -- 'areColorsSimilar' to see whether two colors are
                  -- considered to be "similar".
                  --
@@ -299,54 +303,62 @@ class (Bitmap bmp) => BitmapSearchable bmp where
     findEmbeddedBitmap allEmbs super (row, column) = r' 0 allEmbs
         where pixAny  = matchPixelAny
               pixSame = matchPixelSame
+              pixThrs = matchPixelSameThreshold
               pixDif  = matchPixelDif
               pixDft  = matchPixelDifThreshold
               dimensionsSuper = dimensions super
               r' _ []     = Nothing
               r' n (e:es)
                   | True <- dimensionsFit dimensionsSuper (widthSub + column, heightSub + row)
-                  , True <- matches Nothing [] [] (0, 0)
+                  , True <- matches Nothing [] [] [] (0, 0)
                       = Just $ (n, e)
                   | otherwise
                       = r' (succ n) es
                   -- difColors is necessary because red pixels could be encountered first, so we keep track of every color of every red pixel until we encounter a white pixel, and then we can empty the list after we check whether the first color is part of the list; for efficiency we always eliminate duplicates
-                  where matches matchColor difColors dftColors offi@(offRow, offColumn)
+                  where matches matchColor difColors dftColors thrsColors offi@(offRow, offColumn)
                             | offColumn > maxOffColumn
-                                = matches matchColor difColors dftColors (succ offRow, 0)
+                                = matches matchColor difColors dftColors thrsColors (succ offRow, 0)
                             | offRow    > maxOffRow
                                 = True
-                            | (False, _,           _,          _)          <- posCondition
+                            | (False, _,           _,          _,          _)           <- posCondition
                                 = False
-                            | (_,     matchColor', difColors', dftColors') <- posCondition
-                                = matches matchColor' difColors' dftColors' (offRow, succ offColumn)
+                            | (_,     matchColor', difColors', dftColors', thrsColors') <- posCondition
+                                = matches matchColor' difColors' dftColors' thrsColors' (offRow, succ offColumn)
                             where posCondition
                                       | subPixel == pixAny
                                           -- Any pixel (black in sub)
-                                          = (True, matchColor, difColors, dftColors)
+                                          = (True, matchColor, difColors, dftColors, thrsColors)
                                       | True               <- subPixel == pixSame
                                       , (Just matchColor') <- matchColor
                                           -- Match pixel (white in sub); matching color already set
-                                          = (superPixel == matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
+                                          = (superPixel == matchColor', matchColor, difColors, dftColors, thrsColors)  -- difColors + dftColors should already be empty
                                       | True               <- subPixel == pixSame
                                           -- First match pixel (white in sub); record matching color
-                                          = ((not $ superPixel `elem` difColors) && (not $ any (`areColorsSimilar` superPixel) dftColors), Just superPixel, [], [])
+                                          = ((not $ superPixel `elem` difColors) && (not $ any (`areColorsSimilar` superPixel) dftColors) && (all (`areColorsSimilar` superPixel) thrsColors), Just superPixel, [], [], [])
                                       | True               <- subPixel == pixDif
                                       , (Just matchColor') <- matchColor
                                           -- Dif pixel (completely red in sub); matching color found
-                                          = (superPixel /= matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
+                                          = (superPixel /= matchColor', matchColor, difColors, dftColors, thrsColors)  -- difColors + dftColors should already be empty
                                       | True               <- subPixel == pixDif
                                           -- Dif pixel (completely red in sub); matching color not yet found
-                                          = (True, matchColor, nub $ superPixel : difColors, dftColors)
+                                          = (True, matchColor, nub $ superPixel : difColors, dftColors, thrsColors)
                                       | True               <- subPixel == pixDft
                                       , (Just matchColor') <- matchColor
                                           -- Dft pixel (completely green in sub); matching color found
-                                          = (not $ superPixel `areColorsSimilar` matchColor', matchColor, difColors, dftColors)  -- difColors + dftColors should already be empty
+                                          = (not $ superPixel `areColorsSimilar` matchColor', matchColor, difColors, dftColors, thrsColors)  -- difColors + dftColors should already be empty
                                       | True               <- subPixel == pixDft
                                           -- Dft pixel (completely green in sub); matching color not yet found
-                                          = (True, matchColor, difColors, nub $ superPixel : dftColors)
+                                          = (True, matchColor, difColors, nub $ superPixel : dftColors, thrsColors)
+                                      | True               <- subPixel == pixThrs
+                                      , (Just matchColor') <- matchColor
+                                          -- Thrs pixel (completely yellow in sub); matching color found
+                                          = (superPixel `areColorsSimilar` matchColor', matchColor, difColors, dftColors, thrsColors)  -- difColors + dftColors should already be empty
+                                      | True               <- subPixel == pixThrs
+                                          -- Thrs pixel (completely yellow in sub); matching color not yet found
+                                          = (True, matchColor, difColors, dftColors, nub $ superPixel : thrsColors)
                                       | otherwise
                                           -- undefined pixel in sub bitmap
-                                          = (False, matchColor, difColors, dftColors)
+                                          = (False, matchColor, difColors, dftColors, thrsColors)
                                       where superPixel = getPixel super (row + offRow, column + offColumn)
                                             subPixel   = getPixel e     offi
 
@@ -468,6 +480,13 @@ matchPixelAny = leastIntensity
 
 matchPixelSame :: (Pixel p) => p
 matchPixelSame = greatestIntensity
+
+matchPixelSameThreshold :: (Pixel p) => p
+matchPixelSameThreshold =
+      (red   =: 0xFF)
+    . (green =: 0xFF)
+    . (blue  =: 0x00)
+    $ leastIntensity
 
 matchPixelDif :: (Pixel p) => p
 matchPixelDif =
