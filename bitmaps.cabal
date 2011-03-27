@@ -21,7 +21,7 @@ tested-with:           GHC == 7.0.1
 library
     default-language:  Haskell2010
     hs-source-dirs:    src
-    build-depends:     base >= 4 && < 5, array, containers, binary, cereal, monad-state, zlib, bitmap, stb-image, string-class >= 0.1.4.0, tagged, bytestring
+    build-depends:     base >= 4 && < 5, array, containers, binary, cereal, monad-state, zlib, bitmap, stb-image, string-class >= 0.1.5.0, tagged, bytestring
     exposed-modules:   Codec.String.Base16, Codec.String.Base64, Data.Bitmap.Array, Data.Bitmap.Array.Internal, Data.Bitmap.BMP, Data.Bitmap.Class, Data.Bitmap.Croppable, Data.Bitmap.Foreign, Data.Bitmap.Function, Data.Bitmap.Function.Internal, Data.Bitmap.Pixel, Data.Bitmap.Reflectable, Data.Bitmap.Searchable, Data.Bitmap.String, Data.Bitmap.String.Internal, Data.Bitmap.StringRGB24A4VR, Data.Bitmap.StringRGB24A4VR.Internal, Data.Bitmap.StringRGB32, Data.Bitmap.StringRGB32.Internal, Data.Bitmap.Types, Data.Bitmap.Util
     ghc-options:       -Wall -O2
     other-extensions:  ScopedTypeVariables, TypeFamilies, GeneralizedNewtypeDeriving, PolymorphicComponents, TupleSections, FlexibleContexts, TemplateHaskell, DeriveDataTypeable, ExistentialQuantification, TypeOperators, FlexibleInstances, OverlappingInstances, UndecidableInstances

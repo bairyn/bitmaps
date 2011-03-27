@@ -408,23 +408,23 @@ bitmapFmtRGB32 = BitmapString
     }
 
 -- | Used by the encoders
-encodeBSFormat :: (S.StringCells s) => BitmapString -> (BitmapString -> s)
+encodeBSFormat :: (S.Stringy s) => BitmapString -> (BitmapString -> s)
 encodeBSFormat bsFmt = S.toStringCells . (bmps_data <:) . convertInternalFormat bsFmt
 
-encodeIBF_BGR24A4VR' :: (S.StringCells s) => BitmapString -> s
+encodeIBF_BGR24A4VR' :: (S.Stringy s) => BitmapString -> s
 encodeIBF_BGR24A4VR' = encodeBSFormat bitmapFmtBGR24A4VR
 
-encodeIBF_RGB24A4VR' :: (S.StringCells s) => BitmapString -> s
+encodeIBF_RGB24A4VR' :: (S.Stringy s) => BitmapString -> s
 encodeIBF_RGB24A4VR' = encodeBSFormat bitmapFmtRGB24A4VR
 
-encodeIBF_RGB24A4' :: (S.StringCells s) => BitmapString -> s
+encodeIBF_RGB24A4' :: (S.Stringy s) => BitmapString -> s
 encodeIBF_RGB24A4' = encodeBSFormat bitmapFmtRGB24A4
 
-encodeIBF_RGB32' :: (S.StringCells s) => BitmapString -> s
+encodeIBF_RGB32' :: (S.Stringy s) => BitmapString -> s
 encodeIBF_RGB32' = encodeBSFormat bitmapFmtRGB32
 
 -- | Used by the decoders
-tryBSFormat :: (S.StringCells s) => String -> BitmapString -> (BitmapString -> s -> Either String BitmapString)
+tryBSFormat :: (S.Stringy s) => String -> BitmapString -> (BitmapString -> s -> Either String BitmapString)
 tryBSFormat identifier bsFmt  bmp s
     | S.length s < minLength = Left $ printf "Data.Bitmap.String.Internal.tryBSFormat: %s: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d " identifier
     | otherwise              = Right $
@@ -435,16 +435,16 @@ tryBSFormat identifier bsFmt  bmp s
           rowSize   = fst . rowPaddingBS . (bmps_dimensions =: dms) $ bsFmt
           minLength = rowSize * height
 
-tryIBF_BGR24A4VR' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapString
+tryIBF_BGR24A4VR' :: (S.Stringy s) => BitmapString -> s -> Either String BitmapString
 tryIBF_BGR24A4VR' = tryBSFormat "tryIBF_BGR24A4VR'" bitmapFmtBGR24A4VR
 
-tryIBF_RGB24A4VR' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapString
+tryIBF_RGB24A4VR' :: (S.Stringy s) => BitmapString -> s -> Either String BitmapString
 tryIBF_RGB24A4VR' = tryBSFormat "tryIBF_RGB24A4VR'" bitmapFmtRGB24A4VR
 
-tryIBF_RGB24A4' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapString
+tryIBF_RGB24A4' :: (S.Stringy s) => BitmapString -> s -> Either String BitmapString
 tryIBF_RGB24A4' = tryBSFormat "tryIBF_RGB24A4'" bitmapFmtRGB24A4
 
-tryIBF_RGB32' :: (S.StringCells s) => BitmapString -> s -> Either String BitmapString
+tryIBF_RGB32' :: (S.Stringy s) => BitmapString -> s -> Either String BitmapString
 tryIBF_RGB32' = tryBSFormat "tryIBF_RGB32'" bitmapFmtRGB32
 
 {-

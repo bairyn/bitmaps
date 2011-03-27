@@ -188,10 +188,10 @@ class (Integral (BIndexType bmp), Pixel (BPixelType bmp)) => Bitmap bmp where
 convertBitmap :: (Bitmap a, Bitmap b) => a -> b
 convertBitmap b = constructPixels (\(row, column) -> fromPixel $ getPixel b (fromIntegral row, fromIntegral column)) (let (width, height) = dimensions b in (fromIntegral width, fromIntegral height))
 
-newtype CompleteEncoder bmp = CompleteEncoder {unwrapCompleteEncoder :: (S.StringCells s) => bmp -> s}
-newtype CompleteDecoder bmp = CompleteDecoder {unwrapCompleteDecoder :: (S.StringCells s) => s -> Either String bmp}
-newtype ImageEncoder    bmp = ImageEncoder    {unwrapImageEncoder    :: (S.StringCells s) => bmp -> s}
-newtype ImageDecoder    bmp = ImageDecoder    {unwrapImageDecoder    :: (S.StringCells s) => bmp -> s -> Either String bmp}
+newtype CompleteEncoder bmp = CompleteEncoder {unwrapCompleteEncoder :: (S.Stringy s) => bmp -> s}
+newtype CompleteDecoder bmp = CompleteDecoder {unwrapCompleteDecoder :: (S.Stringy s) => s -> Either String bmp}
+newtype ImageEncoder    bmp = ImageEncoder    {unwrapImageEncoder    :: (S.Stringy s) => bmp -> s}
+newtype ImageDecoder    bmp = ImageDecoder    {unwrapImageDecoder    :: (S.Stringy s) => bmp -> s -> Either String bmp}
 
 newtype GenericBitmapSerializer s = GenericBitmapSerializer {unwrapGenericBitmapSerializer :: (Bitmap bmp) => s bmp}
 
@@ -210,7 +210,7 @@ defaultCompleteEncoders =
     , (CBF_BMPIUU,   GenericBitmapSerializer $ CompleteEncoder $ encodeCBF_BMPIUU)
     ]
 
-encodeCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIU :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIU b =
     let (width, height) = dimensions b
         header = S.fromLazyByteString . runPut $ do
@@ -257,7 +257,7 @@ encodeCBF_BMPIU b =
                       n -> n
     in  header `S.append` image
 
-encodeCBF_BMPIUU :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIUU :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIUU b =
     let (width, height) = dimensions b
         header = S.fromLazyByteString . runPut $ do
@@ -301,10 +301,10 @@ encodeCBF_BMPIUU b =
         image   = encodeImageFmt IBF_BGRU32VR b
     in  header `S.append` image
 
-encodeCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIU64 :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIU64 = encode64 . encodeCompleteFmt CBF_BMPIU
 
-encodeCBF_BMPIUZ64 :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeCBF_BMPIUZ64 :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeCBF_BMPIUZ64 = encode64 . S.fromStringCells . compress . encodeCompleteFmt CBF_BMPIU
 
 defaultCompleteDecoders :: [(CompleteBitmapFormat, GenericBitmapSerializer CompleteDecoder)]
@@ -315,7 +315,7 @@ defaultCompleteDecoders =
     , (CBF_BMPIUU,   GenericBitmapSerializer $ CompleteDecoder $ tryCBF_BMPIUU)
     ]
 
-tryCBF_BMPIU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIU :: (S.Stringy s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIU s = do
     let getImgInfo = do
             m0 <- getWord8
@@ -374,7 +374,7 @@ tryCBF_BMPIU s = do
     let metaBitmap = constructPixels (const leastIntensity) (fromIntegral width, fromIntegral height)
     decodeImageFmt IBF_BGR24A4VR metaBitmap $ imgData
 
-tryCBF_BMPIUU :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIUU :: (S.Stringy s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIUU s = do
     let getImgInfo = do
             m0 <- getWord8
@@ -430,10 +430,10 @@ tryCBF_BMPIUU s = do
     let metaBitmap = constructPixels (const leastIntensity) (fromIntegral width, fromIntegral height)
     decodeImageFmt IBF_BGRU32VR metaBitmap $ imgData
 
-tryCBF_BMPIU64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIU64 :: (S.Stringy s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIU64 s = decodeCompleteFmt CBF_BMPIU =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIU64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
-tryCBF_BMPIUZ64 :: (S.StringCells s, Bitmap bmp) => s -> Either String bmp
+tryCBF_BMPIUZ64 :: (S.Stringy s, Bitmap bmp) => s -> Either String bmp
 tryCBF_BMPIUZ64 s = decodeCompleteFmt CBF_BMPIU =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryCBF_BMPIUZ64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 defaultImageEncoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageEncoder)]
@@ -452,7 +452,7 @@ defaultImageEncoders =
     , (IBF_RGB32Z64,      GenericBitmapSerializer $ ImageEncoder $ encodeIBF_RGB32Z64)
     ]
 
-encodeIBF_IDRGB24Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDRGB24Z64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_IDRGB24Z64 b = ((untag' . S.toMainChar $ 'm') `S.cons`) . encode64 . S.fromStringCells . compress
     $ S.unfoldrN (fromIntegral $ 3 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -479,7 +479,7 @@ encodeIBF_IDRGB24Z64 b = ((untag' . S.toMainChar $ 'm') `S.cons`) . encode64 . S
           untag' = untag :: Tagged s a -> a
           untagBS = untag :: Tagged B.ByteString a -> a
 
-encodeIBF_IDBGR24R2RZ64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDBGR24R2RZ64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_IDBGR24R2RZ64 b = ((untag' . S.toMainChar $ 'b') `S.cons`) . encode64 . S.fromStringCells . compress
     $ S.unfoldrN (fromIntegral $ 3 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -506,15 +506,15 @@ encodeIBF_IDBGR24R2RZ64 b = ((untag' . S.toMainChar $ 'b') `S.cons`) . encode64 
           untag' = untag :: Tagged s a -> a
           untagBS = untag :: Tagged B.ByteString a -> a
 
-encodeIBF_IDBGR24HZH :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDBGR24HZH :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_IDBGR24HZH = ((untag' . S.toMainChar $ 'z') `S.cons`) . encodeHex . S.fromStringCells . compress . encodeImageFmt IBF_BGR24H
     where untag' = untag :: Tagged s a -> a
 
-encodeIBF_IDRGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_IDRGB32Z64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_IDRGB32Z64 = ((untag' . S.toMainChar $ 'l') `S.cons`) . encodeImageFmt IBF_RGB32Z64
     where untag' = untag :: Tagged s a -> a
 
-encodeIBF_BGR24H :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGR24H :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_BGR24H b =
     encodeHex $ S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -540,7 +540,7 @@ encodeIBF_BGR24H b =
           maxColumn = abs . pred $ width
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_RGB24A4 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB24A4 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4 b =
     S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
     where getComponent (row, column, orgb, paddingLeft)
@@ -572,7 +572,7 @@ encodeIBF_RGB24A4 b =
           padCell     = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_BGR24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGR24A4VR :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_BGR24A4VR b =
     S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
     where getComponent (row, column, orgb, paddingLeft)
@@ -604,7 +604,7 @@ encodeIBF_BGR24A4VR b =
           padCell     = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_BGRU32VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGRU32VR :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_BGRU32VR b =
     S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -632,7 +632,7 @@ encodeIBF_BGRU32VR b =
           padCell   = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_BGRU32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_BGRU32 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_BGRU32 b =
     S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -660,7 +660,7 @@ encodeIBF_BGRU32 b =
           padCell   = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_RGB24A4VR :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB24A4VR :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB24A4VR b =
     S.unfoldrN (fromIntegral $ (3 * width + paddingSize) * height) getComponent (0, 0, 0 :: Int, 0)
     where getComponent (row, column, orgb, paddingLeft)
@@ -692,7 +692,7 @@ encodeIBF_RGB24A4VR b =
           padCell     = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_RGB32 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB32 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32 b =
     S.unfoldrN (fromIntegral $ 4 * width * height) getComponent (0, 0, 0 :: Int)
     where getComponent (row, column, orgb)
@@ -720,7 +720,7 @@ encodeIBF_RGB32 b =
           padCell   = untag' . S.toMainChar $ padByte
           untag' = untag :: Tagged s a -> a
 
-encodeIBF_RGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeIBF_RGB32Z64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeIBF_RGB32Z64 = encode64 . S.fromStringCells . compress . encodeImageFmt IBF_RGB32
 
 defaultImageDecoders :: [(ImageBitmapFormat, GenericBitmapSerializer ImageDecoder)]
@@ -739,13 +739,13 @@ defaultImageDecoders =
     , (IBF_RGB32Z64,      GenericBitmapSerializer $ ImageDecoder $ tryIBF_RGB32Z64)
     ]
 
-tryIBF_IDRGB24Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDRGB24Z64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_IDRGB24Z64 metaBitmap s_
     | (Just ('m', s')) <- (first S.toChar) <$> S.safeUncons s_
         = tryIBF_IDRGB24Z64' =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_IDRGB24Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s')
     | otherwise
         = Left "Data.Bitmap.Class.tryIBF_IDRGB24Z64: string does not begin with identifying 'b' character"
-    where tryIBF_IDRGB24Z64' :: (S.StringCells s2) => s2 -> Either String bmp
+    where tryIBF_IDRGB24Z64' :: (S.Stringy s2) => s2 -> Either String bmp
           tryIBF_IDRGB24Z64' s
               | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_IDRGB24Z64: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
               | otherwise              = Right $
@@ -761,13 +761,13 @@ tryIBF_IDRGB24Z64 metaBitmap s_
                                              . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
                                              $ leastIntensity
 
-tryIBF_IDBGR24R2RZ64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDBGR24R2RZ64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_IDBGR24R2RZ64 metaBitmap s_
     | (Just ('b', s')) <- (first S.toChar) <$> S.safeUncons s_
         = tryIBF_IDBGR24R2RZ64' =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_IDBGR24R2RZ64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s')
     | otherwise
         = Left "Data.Bitmap.Class.tryIBF_IDBGR24R2RZ64: string does not begin with identifying 'b' character"
-    where tryIBF_IDBGR24R2RZ64' :: (S.StringCells s2) => s2 -> Either String bmp
+    where tryIBF_IDBGR24R2RZ64' :: (S.Stringy s2) => s2 -> Either String bmp
           tryIBF_IDBGR24R2RZ64' s
               | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_IDBGR24R2RZ64: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
               | otherwise              = Right $
@@ -792,25 +792,25 @@ tryIBF_IDBGR24R2RZ64 metaBitmap s_
                                 . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
                                 $ leastIntensity
 
-tryIBF_IDBGR24HZH :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDBGR24HZH :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_IDBGR24HZH metaBitmap s_
     | (Just ('z', s')) <- (first S.toChar) <$> S.safeUncons s_
         = decodeImageFmt IBF_BGR24H metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_IDBGR24HZH: not a valid sequence of characters representing a base-16 encoded string") Right $ decodeHex s')
     | otherwise
         = Left "Data.Bitmap.Class.tryIBF_IDBGR24HZH: string does not begin with identifying 'z' character"
 
-tryIBF_IDRGB32Z64 :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_IDRGB32Z64 :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_IDRGB32Z64 metaBitmap s_
     | (Just ('l', s')) <- (first S.toChar) <$> S.safeUncons s_
         = decodeImageFmt IBF_RGB32Z64 metaBitmap s'
     | otherwise
         = Left "Data.Bitmap.Class.tryIBF_IDRGB32Z64: string does not begin with identifying 'l' character"
 
-tryIBF_BGR24H :: forall s bmp. (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGR24H :: forall s bmp. (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_BGR24H metaBitmap s_
     | S.length s_ < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGR24H: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s_) minLength
     | otherwise               = tryIBF_BGR24H' =<< (maybe (Left "Data.Bitmap.Class.tryIBF_BGR24H: not a valid sequence of characters representing a base-16 encoded string") Right $ decodeHex s_)
-    where tryIBF_BGR24H' :: (S.StringCells s2) => s2 -> Either String bmp
+    where tryIBF_BGR24H' :: (S.Stringy s2) => s2 -> Either String bmp
           tryIBF_BGR24H' s
               | S.length s < minLengthDecoded = Left $ printf "Data.Bitmap.Class.tryIBF_BGR24H: the size of the encoded string, %d, is correct because it is at least %d, but after it was hex decoded, its size was incorrect; it was %d and it should have been at least %d; most likely there is a non-hex character too early in the string" (S.length s_) minLength (S.length s) minLengthDecoded
               | otherwise                     = Right $ constructPixels pixelf dms
@@ -826,7 +826,7 @@ tryIBF_BGR24H metaBitmap s_
           minLength        = fromIntegral $ 2 * 3 * width * height
           minLengthDecoded = fromIntegral $ bytesPerRow * height
 
-tryIBF_RGB24A4 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB24A4 :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_RGB24A4 metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB24A4: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -845,7 +845,7 @@ tryIBF_RGB24A4 metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
                                    $ leastIntensity
 
-tryIBF_BGR24A4VR :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGR24A4VR :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_BGR24A4VR metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGR24A4VR: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -865,7 +865,7 @@ tryIBF_BGR24A4VR metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
                                    $ leastIntensity
 
-tryIBF_BGRU32VR :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGRU32VR :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_BGRU32VR metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGRU32VR: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -882,7 +882,7 @@ tryIBF_BGRU32VR metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
                                    $ leastIntensity
 
-tryIBF_BGRU32 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_BGRU32 :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_BGRU32 metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_BGRU32: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -898,7 +898,7 @@ tryIBF_BGRU32 metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 0)))
                                    $ leastIntensity
 
-tryIBF_RGB24A4VR :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB24A4VR :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_RGB24A4VR metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB24A4VR: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -918,7 +918,7 @@ tryIBF_RGB24A4VR metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 2)))
                                    $ leastIntensity
 
-tryIBF_RGB32 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB32 :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_RGB32 metaBitmap s
     | S.length s < minLength = Left $ printf "Data.Bitmap.Class.tryIBF_RGB32: string is too small to contain the pixels of a bitmap with the dimensions of the passed bitmap, which are (%d, %d); the string is %d bytes long, but needs to be at least %d bytes long" (fromIntegral width  :: Integer) (fromIntegral height  :: Integer) (S.length s) minLength
     | otherwise              = Right $
@@ -934,14 +934,14 @@ tryIBF_RGB32 metaBitmap s
                                    . (blue  =: (S.toWord8 $ s `S.index` (offset + 3)))
                                    $ leastIntensity
 
-tryIBF_RGB32Z64 :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Either String bmp
+tryIBF_RGB32Z64 :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Either String bmp
 tryIBF_RGB32Z64 metaBitmap s = decodeImageFmt IBF_RGB32 metaBitmap =<< tablespoon . decompress . S.toStringCells =<< (maybe (Left "Data.Bitmap.Class.tryIBF_RGB32Z64: not a valid sequence of characters representing a base-64 encoded string") Right $ decode64 s)
 
 -- | Encode a bitmap
 --
 -- An implementation can choose the most efficient or appropriate
 -- format by placing its encoder first in its list of encoders.
-encodeComplete :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeComplete :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeComplete
     | null encoders = error $ printf "encodeComplete: implementation defines no encoders"
     | otherwise     = unwrapCompleteEncoder . snd . head $ encoders
@@ -951,14 +951,14 @@ encodeComplete
 --
 -- The result of first decoder of the implementation that succeeds
 -- will be returned.  If none succeed, 'Nothing' is returned.
-decodeComplete :: (S.StringCells s, Bitmap bmp) => s -> Maybe (CompleteBitmapFormat, bmp)
+decodeComplete :: (S.Stringy s, Bitmap bmp) => s -> Maybe (CompleteBitmapFormat, bmp)
 decodeComplete s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapCompleteDecoder decoder s) $ completeDecoders
 
 -- | Encode the pixels of a bitmap
 --
 -- An implementation can choose the most efficient or appropriate
 -- format by placing its encoder first in its list of encoders.
-encodeImage :: (S.StringCells s, Bitmap bmp) => bmp -> s
+encodeImage :: (S.Stringy s, Bitmap bmp) => bmp -> s
 encodeImage
     | null encoders = error $ printf "encodeImage: implementation defines no encoders"
     | otherwise     = unwrapImageEncoder . snd . head $ encoders
@@ -968,7 +968,7 @@ encodeImage
 --
 -- The result of first decoder of the implementation that succeeds
 -- will be returned.  If none succeed, 'Nothing' is returned.
-decodeImage :: (S.StringCells s, Bitmap bmp) => bmp -> s -> Maybe (ImageBitmapFormat, bmp)
+decodeImage :: (S.Stringy s, Bitmap bmp) => bmp -> s -> Maybe (ImageBitmapFormat, bmp)
 decodeImage bmp s = listToMaybe . catMaybes . map (\(fmt, decoder) -> either (const Nothing) (Just . (fmt, )) $ unwrapImageDecoder decoder bmp s) $ imageDecoders
 
 serializeFmt :: (Eq a, Show a) => [(a, b)] -> String -> (a -> b)
@@ -980,22 +980,22 @@ serializeFmt serializers noHandlerErrorFmtStr = \fmt -> case lookup fmt serializ
             (show fmt)
 
 -- | Encode a bitmap in a particular format
-encodeCompleteFmt :: (S.StringCells s, Bitmap bmp) => CompleteBitmapFormat -> bmp -> s
+encodeCompleteFmt :: (S.Stringy s, Bitmap bmp) => CompleteBitmapFormat -> bmp -> s
 encodeCompleteFmt = unwrapCompleteEncoder . serializeFmt completeEncoders
     "encodeCompleteFmt: Bitmap instance did not define handler for encoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultCompleteEncoders' properly?"
 
 -- | Decode a bitmap in a particular format
-decodeCompleteFmt :: (S.StringCells s, Bitmap bmp) => CompleteBitmapFormat -> s -> Either String bmp
+decodeCompleteFmt :: (S.Stringy s, Bitmap bmp) => CompleteBitmapFormat -> s -> Either String bmp
 decodeCompleteFmt = unwrapCompleteDecoder . serializeFmt completeDecoders
     "decodeCompleteFmt: Bitmap instance did not define handler for decoding '%s'; does it use 'updateIdentifiableElements' with 'defaultCompleteDecoders' properly?"
 
 -- | Encode the pixels of a bitmap in a particular format
-encodeImageFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s
+encodeImageFmt :: (S.Stringy s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s
 encodeImageFmt    = unwrapImageEncoder . serializeFmt imageEncoders
     "encodeImageFmt: Bitmap instance did not define handler for encoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultImageEncoders' properly?"
 
 -- | Decode the pixels of a bitmap in a particular format
-decodeImageFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s -> Either String bmp
+decodeImageFmt :: (S.Stringy s, Bitmap bmp) => ImageBitmapFormat -> bmp -> s -> Either String bmp
 decodeImageFmt    = unwrapImageDecoder . serializeFmt imageDecoders
     "decodeImageFmt: Bitmap instance did not define handler for decoding format '%s'; does it use 'updateIdentifiableElements' with 'defaultImageDecoders' properly?"
 
@@ -1011,11 +1011,11 @@ decodeImageFmt    = unwrapImageDecoder . serializeFmt imageDecoders
 -- is first constructed (not necessarily when any pixel is accessed) (currently
 -- none of the bitmap types exported in this library are so strict), as the
 -- bitmap will not need to be fully evaluated; only the dimensions will be used.
-decodeImageDimensions :: (S.StringCells s, Bitmap bmp) => Dimensions (BIndexType bmp) -> s -> Maybe (ImageBitmapFormat, bmp)
+decodeImageDimensions :: (S.Stringy s, Bitmap bmp) => Dimensions (BIndexType bmp) -> s -> Maybe (ImageBitmapFormat, bmp)
 decodeImageDimensions dms = decodeImage (constructPixels (const leastIntensity) dms)
 
 -- | Decode an image with the given dimensions as 'decodeImageDimensions' does it, but in a specific format
-decodeImageDimensionsFmt :: (S.StringCells s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
+decodeImageDimensionsFmt :: (S.Stringy s, Bitmap bmp) => ImageBitmapFormat -> Dimensions (BIndexType bmp) -> s -> Either String bmp
 decodeImageDimensionsFmt fmt dms = decodeImageFmt fmt (constructPixels (const leastIntensity) dms)
 
 -- | Determine whether the seconds dimensions passed can fit within the first dimensions passed
