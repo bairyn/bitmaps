@@ -6,7 +6,7 @@ license:               BSD3
 license-file:          LICENSE
 copyright:             Copyright (C) 2010 Byron James Johnson
 author:                Byron James Johnson
-maintainer:            KrabbyKrap@gmail.com
+maintainer:            ByronJohnsonFP@gmail.com
 synopsis:              Bitmap library
 description:           Library defining several bitmap types, including ones stored as unboxed arrays, any string type, and functions
 				       .
@@ -27,5 +27,5 @@ library
     other-extensions:  ScopedTypeVariables, TypeFamilies, GeneralizedNewtypeDeriving, PolymorphicComponents, TupleSections, FlexibleContexts, TemplateHaskell, DeriveDataTypeable, ExistentialQuantification, TypeOperators, FlexibleInstances, OverlappingInstances, UndecidableInstances
 
 source-repository head
-    type:              darcs
-    location:          http://patch-tag.com/r/bob/abitmap
+    type:              git
+    location:          git@github.com:bairyn/bitmaps
