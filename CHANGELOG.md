@@ -1,7 +1,7 @@
 PLACEHOLDER
 -----
 * Fixed build errors.
-  * Hide import of `get` `from Control.Monad.Record`.
+  * Hide imports of `get` from `Control.Monad.Record`.
   * Support ``bitmap-0.0.2``s new major API changes that don't conform to the
     cabal's package versioning policy.
   * Replaced imports of `Foreign` with `System.IO.Unsafe` for `unsafePerformIO`.
