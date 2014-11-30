@@ -37,7 +37,6 @@ import Data.Bitmap.Class
 import Data.Bitmap.Croppable
 import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
-import Data.Bitmap.Searchable
 import Data.Bitmap.Types
 import Data.Bitmap.Util
 import qualified Data.ByteString.Lazy as B

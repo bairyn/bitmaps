@@ -10,6 +10,9 @@ PLACEHOLDER
     changed lens to take a getter and a modifier rather than a getter and a
     setter.  Eventually this library will be ported from `fc-labels` to `lens`,
     which was written after this project was first developed.
+* Fixed warnings.
+  * Removed redundant import of `Control.Bitmap.Searchable` from
+    `Data.Bitmap.String.Internal`.
 
 0.2.6.2
 -----
