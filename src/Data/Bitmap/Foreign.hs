@@ -7,15 +7,15 @@ module Data.Bitmap.Foreign
     , BitmapForeign(..)
     ) where
 
-import Control.Monad.Record
-import qualified Data.Bitmap      as FB
-import qualified Data.Bitmap.IO   as FB
-import Data.Bitmap.Class
-import Data.Bitmap.Pixel
-import Data.Bitmap.Types
-import Foreign (unsafePerformIO)
-import Foreign.Storable
-import Text.Printf
+import           Control.Monad.Record
+import qualified Data.Bitmap          as FB
+import qualified Data.Bitmap.IO       as FB
+import           Data.Bitmap.Class
+import           Data.Bitmap.Pixel
+import           Data.Bitmap.Types
+import           Foreign.Storable
+import           System.IO.Unsafe           (unsafePerformIO)
+import           Text.Printf
 
 type FBBitmapBase = FB.Bitmap
 
