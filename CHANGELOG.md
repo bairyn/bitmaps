@@ -1,5 +1,8 @@
 PLACEHOLDER
 -----
+
+0.2.6.3
+-----
 * Fixed build errors.
   * Hide imports of `get` from `Control.Monad.Record`.
   * Support ``bitmap-0.0.2``s new major API changes that don't conform to the
