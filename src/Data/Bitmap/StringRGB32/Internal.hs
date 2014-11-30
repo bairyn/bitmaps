@@ -10,14 +10,14 @@ module Data.Bitmap.StringRGB32.Internal
 
 import Control.Applicative
 import Control.Arrow
-import Control.Monad.Record
+import Control.Monad.Record                hiding (get)
 import Data.Binary
 import Data.Bitmap.Class
 import Data.Bitmap.Pixel
 import Data.Bitmap.Reflectable
 import Data.Bitmap.Searchable
 import Data.Bitmap.Types
-import Data.Bitmap.Util hiding (padByte)
+import Data.Bitmap.Util                    hiding (padByte)
 import Data.Bits
 import qualified Data.ByteString      as B
 import qualified Data.Serialize       as S
