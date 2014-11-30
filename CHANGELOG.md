@@ -1,9 +1,11 @@
 PLACEHOLDER
 -----
 * Fixed build errors.
-  * Replace imports of `Foreign` with `System.IO.Unsafe` for `unsafePerformIO`.
+  * Support ``bitmap-0.0.2``s new major API changes that don't conform to the
+    cabal's package versioning policy.
+  * Replaced imports of `Foreign` with `System.IO.Unsafe` for `unsafePerformIO`.
     `Foreign` no longer provides `unsafePerformIO`.
-  * Replace calls to `lens` with calls to `lensGS`, since fc-labels recently
+  * Replaced calls to `lens` with calls to `lensGS`, since fc-labels recently
     changed lens to take a getter and a modifier rather than a getter and a
     setter.  Eventually this library will be ported from `fc-labels` to `lens`,
     which was written after this project was first developed.
