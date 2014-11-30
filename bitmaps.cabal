@@ -1,15 +1,16 @@
-name:          bitmaps
-version:       0.2.6.1
-cabal-version: >= 1.10
-build-type:    Simple
-license:       BSD3
-license-file:  LICENSE
-copyright:     Copyright (C) 2010 Byron James Johnson
-author:        Byron James Johnson
-maintainer:    ByronJohnsonFP@gmail.com
-category:      Graphics, Codec, Data
-tested-with:   GHC == 7.0.1
-synopsis:      Bitmap library
+name:               bitmaps
+-- Don't forget to bump the tag placeholder too.
+version:            0.2.6.1
+cabal-version:      >= 1.10
+build-type:         Simple
+license:            BSD3
+license-file:       LICENSE
+copyright:          Copyright (C) 2010 Byron James Johnson
+author:             Byron James Johnson
+maintainer:         ByronJohnsonFP@gmail.com
+category:           Graphics, Codec, Data
+tested-with:        GHC == 7.8.2
+synopsis:           Bitmap library
 description:
   Library defining several bitmap types, including ones stored as unboxed
   arrays, any string type, and functions
@@ -84,4 +85,9 @@ library
 
 source-repository head
   type:     git
-  location: git@github.com:bairyn/bitmaps
+  location: git@github.com:bairyn/bitmaps.git
+
+source-repository this
+  type:     git
+  location: git@github.com:bairyn/bitmaps.git
+  tag:      v0.2.6.1
