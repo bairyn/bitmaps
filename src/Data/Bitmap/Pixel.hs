@@ -128,9 +128,9 @@ newtype PixelBGRA = PixelBGRA {unwrapPixelBGRA :: PixelStorage}
     deriving (Eq, Bounded, Enum, Ord, Real, Integral, Bits, Num, Show, Data, Typeable)
 
 byteLens :: (Integral p, Bits p) => Integer -> (p :-> Word8)
-byteLens 0 = lens (fromIntegral) (\w p -> (p .&. complement 0xFF) .|. fromIntegral w)
+byteLens 0 = lensGS (fromIntegral) (\w p -> (p .&. complement 0xFF) .|. fromIntegral w)
 byteLens i = let i' = fromIntegral i
-             in  lens (fromIntegral . (`shiftR` i')) (\w p -> (p .&. complement (0xFF `shiftL` i')) .|. fromIntegral w `shiftL` i')
+             in  lensGS (fromIntegral . (`shiftR` i')) (\w p -> (p .&. complement (0xFF `shiftL` i')) .|. fromIntegral w `shiftL` i')
 
 instance Pixel PixelRGB where
     red   = byteLens 16
@@ -272,7 +272,7 @@ lsetter 0 = \component storage -> storage .|. fromIntegral component
 lsetter i = \component storage -> storage .|. (((fromIntegral (component :: GenPixelComponent)) :: GenPixelStorage) `shiftL` (fromIntegral i))
 
 genRed :: GenPixel :-> GenPixelComponent
-genRed = lens getter setter
+genRed = lensGS getter setter
     where getter           (GenPixelRGB  storage) =             lgetter 16 storage
           getter           (GenPixelBGR  storage) =             lgetter 0  storage
           getter           (GenPixelRGBA storage) =             lgetter 24 storage
@@ -283,7 +283,7 @@ genRed = lens getter setter
           setter component (GenPixelBGRA storage) = GenPixelBGRA $ lsetter 8  component storage
 
 genGreen :: GenPixel :-> GenPixelComponent
-genGreen = lens getter setter
+genGreen = lensGS getter setter
     where getter           (GenPixelRGB  storage) =             lgetter 8  storage
           getter           (GenPixelBGR  storage) =             lgetter 8  storage
           getter           (GenPixelRGBA storage) =             lgetter 16 storage
@@ -294,7 +294,7 @@ genGreen = lens getter setter
           setter component (GenPixelBGRA storage) = GenPixelBGRA $ lsetter 16 component storage
 
 genBlue :: GenPixel :-> GenPixelComponent
-genBlue = lens getter setter
+genBlue = lensGS getter setter
     where getter           (GenPixelRGB  storage) =             lgetter 0  storage
           getter           (GenPixelBGR  storage) =             lgetter 16 storage
           getter           (GenPixelRGBA storage) =             lgetter 8  storage
@@ -305,7 +305,7 @@ genBlue = lens getter setter
           setter component (GenPixelBGRA storage) = GenPixelBGRA $ lsetter 24 component storage
 
 genAlpha :: GenPixel :-> GenPixelComponent
-genAlpha = lens getter setter
+genAlpha = lensGS getter setter
     where getter             (GenPixelRGB  _)       =             greatestIntensityComponent
           getter             (GenPixelBGR  _)       =             greatestIntensityComponent
           getter             (GenPixelRGBA storage) =             lgetter 0  storage
