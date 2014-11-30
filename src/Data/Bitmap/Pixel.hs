@@ -46,11 +46,11 @@ import Data.Data
 import Data.Maybe
 import qualified Data.String.Class as S
 import Data.Word
-import Foreign (unsafePerformIO)
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Marshal.Utils
 import Foreign.Storable
+import System.IO.Unsafe (unsafePerformIO)
 
 class (Integral a, ConvPixelRGB a, ConvPixelRGBA a, ConvPixelBGR a, ConvPixelBGRA a) => Pixel a where
     red   ::        a :-> PixelComponent
