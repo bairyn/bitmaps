@@ -1,6 +1,6 @@
 name:               bitmaps
 -- Don't forget to bump the tag and CHANGELOG placeholder too.
-version:            0.2.6.1
+version:            0.2.6.2
 cabal-version:      >= 1.18
 build-type:         Simple
 license:            BSD3
@@ -97,4 +97,4 @@ source-repository head
 source-repository this
   type:     git
   location: git@github.com:bairyn/bitmaps.git
-  tag:      v0.2.6.1
+  tag:      v0.2.6.2
