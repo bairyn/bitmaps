@@ -60,9 +60,9 @@ library
    ,containers
    ,binary
    ,cereal
-   ,monad-state
+   ,monad-state  >= 0.1.1.3
    ,zlib
-   ,bitmap
+   ,bitmap       >= 0.0.2
    ,stb-image
    ,string-class >= 0.1.5.0
    ,tagged

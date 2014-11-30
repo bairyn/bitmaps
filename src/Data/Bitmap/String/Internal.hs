@@ -30,7 +30,7 @@ module Data.Bitmap.String.Internal
 
 import Control.Applicative
 --import Control.Arrow  -- See serializers part of 'BitmapString's 'Bitmap' instance
-import Control.Monad.Record
+import Control.Monad.Record                 hiding (get)
 import Data.Bits
 import Data.Binary
 import Data.Bitmap.Class
